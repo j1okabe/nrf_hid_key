@@ -5,3 +5,8 @@ lib/README
 test
 .gitignore
 
+src/ff.c
+src/diskio.h
+src/ff.h
+src/ffconf.h
+src/ramdisk.h
