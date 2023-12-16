@@ -5,6 +5,10 @@
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <OneButton.h>
+#include "SPI.h"
+#include "SdFat.h"
+#include "Adafruit_SPIFlash.h"
+#include "Adafruit_TinyUSB.h"
 
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
@@ -31,6 +35,18 @@ Adafruit_FlashTransport_SPI flashTransport(EXTERNAL_FLASH_USE_CS, EXTERNAL_FLASH
 #endif
 
 // Adafruit_SPIFlash flash(&flashTransport);
+Adafruit_SPIFlash flash(&flashTransport);
+// file system object from SdFat
+FatFileSystem fatfs;
+
+FatFile root;
+FatFile file;
+
+// USB Mass Storage object
+// Adafruit_USBD_MSC usb_msc;
+
+// Set to true when PC write to flash
+bool fs_changed;
 
 // typedef volatile uint32_t REG32;
 // #define pREG32 (REG32 *)
@@ -72,7 +88,6 @@ OneButton button4(D5, true);
 OneButton button5(D6, true);
 OneButton button6(D7, true);
 
-int myFunction(int, int);
 void MyKeyCombi_init(void)
 {
   varclr(&keycombi_report);
@@ -170,12 +185,16 @@ void QSPIF_sleep(void)
 
 void connect_callback(uint16_t conn_handle);
 void disconnect_callback(uint16_t conn_handle, uint8_t reason);
+int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize);
+int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize);
+void msc_flush_cb(void);
+
 void setup()
 {
   // Enable DC-DC converter
   NRF_POWER->DCDCEN = 1;
   MyKeyCombi_init();
-  QSPIF_sleep();
+
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
@@ -207,6 +226,7 @@ void setup()
   button4.attachClick(click4);
   button5.attachClick(click5);
   button6.attachLongPressStart(longpress6);
+  Bluefruit.Periph.setConnIntervalMS(30, 120);
   Bluefruit.begin();
   Bluefruit.autoConnLed(0);
   Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
@@ -216,7 +236,6 @@ void setup()
   Bluefruit.setName("nRF52Keyboard");
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
-  Bluefruit.Periph.setConnIntervalMS(50, 200);
   Bluefruit.Periph.setConnSlaveLatency(20);
   Bluefruit.Periph.setConnSupervisionTimeoutMS(4000);
   // Bluefruit.Periph.
@@ -232,12 +251,36 @@ void setup()
    * connection interval to 11.25  ms and 15 ms respectively for best performance.
    */
   blehid.begin();
+  // Bluefruit.Periph.setConnIntervalMS(30, 120);
+  Bluefruit.Periph.setConnInterval(18, 24);
   if (NRF_POWER->USBREGSTATUS & 0x0001)
   {
     Serial.begin(115200);
     delay(100);
     // VBUS present
     Serial.println("VBUS present");
+    // flash.begin();
+
+    // // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
+    // usb_msc.setID("Adafruit", "External Flash", "1.0");
+
+    // // Set callback
+    // usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
+
+    // // Set disk size, block size should be 512 regardless of spi flash page size
+    // usb_msc.setCapacity(flash.size() / 512, 512);
+
+    // // MSC is ready for read/write
+    // usb_msc.setUnitReady(true);
+
+    // usb_msc.begin();
+
+    // // Init file system on the flash
+    // fatfs.begin(&flash);
+  }
+  else
+  {
+    QSPIF_sleep();
   }
   // Advertising packet
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
@@ -368,6 +411,44 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
   Serial.print("Disconnected, reason = 0x");
   Serial.println(reason, HEX);
 }
+
+// Callback invoked when received READ10 command.
+// Copy disk's data to buffer (up to bufsize) and
+// return number of copied bytes (must be multiple of block size)
+int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize)
+{
+  // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
+  // already include 4K sector caching internally. We don't need to cache it, yahhhh!!
+  return flash.readBlocks(lba, (uint8_t *)buffer, bufsize / 512) ? bufsize : -1;
+}
+
+// Callback invoked when received WRITE10 command.
+// Process data in buffer to disk's storage and
+// return number of written bytes (must be multiple of block size)
+int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize)
+{
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
+  // already include 4K sector caching internally. We don't need to cache it, yahhhh!!
+  return flash.writeBlocks(lba, buffer, bufsize / 512) ? bufsize : -1;
+}
+
+// Callback invoked when WRITE10 command is completed (status received and accepted by host).
+// used to flush any pending cache.
+void msc_flush_cb(void)
+{
+  // sync with flash
+  flash.syncBlocks();
+
+  // clear file system's cache to force refresh
+  fatfs.cacheClear();
+
+  fs_changed = true;
+
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
 // https://days-of-programming.blogspot.com/search/label/nRF52840
 
 // XIAO BLEをArduino開発するときの2種のボードライブラリの違い
