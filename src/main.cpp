@@ -1,15 +1,29 @@
 #include <Arduino.h>
-// #include "SdFat.h"
-#include "Adafruit_SPIFlash.h"
 #include <bluefruit.h>
-#include <Adafruit_LittleFS.h>
-#include <InternalFileSystem.h>
-#include <OneButton.h>
-#include "SPI.h"
-#include "SdFat.h"
+// #include <Adafruit_LittleFS.h>
+// #include <InternalFileSystem.h>
 #include "Adafruit_SPIFlash.h"
 #include "Adafruit_TinyUSB.h"
+#include "SPI.h"
+#include "SdFat.h"
+#include "simpleiniread.h"
+#include <OneButton.h>
+// #define DISK_BLOCK_NUM 16
+// #define DISK_BLOCK_SIZE 512
+// #define RAMDISK
+// #include "ramdisk.h"
 
+/*
+.pio\libdeps\xiaoble_adafruit_nrf52\Adafruit
+SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
+
+.pio\libdeps\xiaoble_adafruit_nrf52\Adafruit SPIFlash\src\flash_devices.h line
+537 .max_clock_speed_mhz = 104, .quad_enable_bit_mask = 0x02,
+
+
+*/
+const char *inifilename = "keymap.ini";
+#define KEYSNUM 5
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
 
@@ -27,7 +41,8 @@ Adafruit_FlashTransport_ESP32 flashTransport;
 Adafruit_FlashTransport_QSPI flashTransport;
 
 #elif defined(EXTERNAL_FLASH_USE_SPI)
-Adafruit_FlashTransport_SPI flashTransport(EXTERNAL_FLASH_USE_CS, EXTERNAL_FLASH_USE_SPI);
+Adafruit_FlashTransport_SPI flashTransport(EXTERNAL_FLASH_USE_CS,
+                                           EXTERNAL_FLASH_USE_SPI);
 
 #else
 #error No QSPI/SPI flash are defined on your board variant.h !
@@ -43,21 +58,17 @@ FatFile root;
 FatFile file;
 
 // USB Mass Storage object
-// Adafruit_USBD_MSC usb_msc;
+Adafruit_USBD_MSC usb_msc;
 
 // Set to true when PC write to flash
 bool fs_changed;
 
-// typedef volatile uint32_t REG32;
-// #define pREG32 (REG32 *)
-
-// #define DEVICE_ID_HIGH (*(pREG32(0x10000060)))
-// #define DEVICE_ID_LOW (*(pREG32(0x10000064)))
-
 #define BAT_AVERAGE_COUNT 16
 #define BAT_AVERAGE_MASK 0x000F
-// #define VBAT_MV_PER_LSB   (0.73242188F)   // 3.0V ADC range and 12-bit ADC resolution = 3000mV/4096
-#define VBAT_MV_PER_LSB (0.439453126F) // 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
+// #define VBAT_MV_PER_LSB   (0.73242188F)   // 3.0V ADC range and 12-bit ADC
+// resolution = 3000mV/4096
+#define VBAT_MV_PER_LSB                                                        \
+    (0.439453126F) // 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
 
 BLEDis bledis;
 BLEHidAdafruit blehid;
@@ -68,16 +79,26 @@ int8_t vindex;
 int8_t count;
 uint8_t lastnotify;
 uint16_t rawvalues[BAT_AVERAGE_COUNT] = {0};
+uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
+//  keycode[0] = conv_table[chr][1];
+
 hid_keyboard_report_t keycombi_report[6];
 int work_LED_status = HIGH;
-enum
+enum Mymodifier
 {
-  MyKeyCombi_0,
-  MyKeyCombi_1,
-  MyKeyCombi_2,
-  MyKeyCombi_3,
-  MyKeyCombi_4,
-  MyKeyCombi_5
+    myGUI,
+    myCTRL,
+    myALT
+};
+
+enum mycombi
+{
+    MyKeyCombi_0,
+    MyKeyCombi_1,
+    MyKeyCombi_2,
+    MyKeyCombi_3,
+    MyKeyCombi_4,
+    MyKeyCombi_5
 };
 // Setup buttons
 OneButton button0(D1, true);
@@ -87,100 +108,67 @@ OneButton button3(D4, true);
 OneButton button4(D5, true);
 OneButton button5(D6, true);
 OneButton button6(D7, true);
-
+void loadmapfile(void);
 void MyKeyCombi_init(void)
 {
-  varclr(&keycombi_report);
-  keycombi_report[MyKeyCombi_0].modifier = KEYBOARD_MODIFIER_LEFTGUI;
-  keycombi_report[MyKeyCombi_0].keycode[0] = HID_KEY_E;
-  // keycombi_report[MyKeyCombi_0].keycode[0] = HID_KEY_NONE;
+    varclr(&keycombi_report);
+    keycombi_report[MyKeyCombi_0].modifier = KEYBOARD_MODIFIER_LEFTGUI;
+    keycombi_report[MyKeyCombi_0].keycode[0] = HID_KEY_E;
+    // keycombi_report[MyKeyCombi_0].keycode[0] = HID_KEY_NONE;
 
-  keycombi_report[MyKeyCombi_1].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
-  keycombi_report[MyKeyCombi_1].keycode[0] = HID_KEY_C;
+    keycombi_report[MyKeyCombi_1].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
+    keycombi_report[MyKeyCombi_1].keycode[0] = HID_KEY_C;
 
-  keycombi_report[MyKeyCombi_2].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
-  keycombi_report[MyKeyCombi_2].keycode[0] = HID_KEY_V;
+    keycombi_report[MyKeyCombi_2].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
+    keycombi_report[MyKeyCombi_2].keycode[0] = HID_KEY_V;
 
-  keycombi_report[MyKeyCombi_3].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
-  keycombi_report[MyKeyCombi_3].keycode[0] = HID_KEY_Z;
+    keycombi_report[MyKeyCombi_3].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
+    keycombi_report[MyKeyCombi_3].keycode[0] = HID_KEY_Z;
 
-  keycombi_report[MyKeyCombi_4].modifier = KEYBOARD_MODIFIER_LEFTGUI;
-  keycombi_report[MyKeyCombi_4].keycode[0] = HID_KEY_L;
+    keycombi_report[MyKeyCombi_4].modifier = KEYBOARD_MODIFIER_LEFTGUI;
+    keycombi_report[MyKeyCombi_4].keycode[0] = HID_KEY_L;
 
-  keycombi_report[MyKeyCombi_5].modifier = KEYBOARD_MODIFIER_LEFTGUI;
-  // keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_L;
-  keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_D;
+    keycombi_report[MyKeyCombi_5].modifier = KEYBOARD_MODIFIER_LEFTGUI;
+    // keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_L;
+    keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_D;
 }
-void myKeyboardReport(hid_keyboard_report_t *report)
+void myKeyboardReport(mycombi combi)
 {
-  BLEConnection *connection = Bluefruit.Connection(0);
-  if (connection && connection->connected() && connection->secured())
-  {
-    blehid.keyboardReport(report);
-  }
+    BLEConnection *connection = Bluefruit.Connection(0);
+    if(connection && connection->connected() && connection->secured())
+    {
+        blehid.keyboardReport(&keycombi_report[combi]);
+    }
+    hasKeyPressed = true;
+    Serial.println("button0");
+    delay(5);
 }
 void myBasNotyfy(uint8_t value)
 {
-  BLEConnection *connection = Bluefruit.Connection(0);
-  if (connection && connection->connected() && connection->secured())
-  {
-    blebas.notify(value);
-  }
+    BLEConnection *connection = Bluefruit.Connection(0);
+    if(connection && connection->connected() && connection->secured())
+    {
+        blebas.notify(value);
+    }
 }
-void click0(void)
-{
-  myKeyboardReport(&keycombi_report[MyKeyCombi_0]);
-  hasKeyPressed = true;
-  Serial.println("button0");
-  delay(5);
-}
-void click1(void)
-{
-  myKeyboardReport(&keycombi_report[MyKeyCombi_1]);
-  hasKeyPressed = true;
-  Serial.println("button1");
-  delay(5);
-}
-void click2(void)
-{
-  myKeyboardReport(&keycombi_report[MyKeyCombi_2]);
-  hasKeyPressed = true;
-  Serial.println("button2");
-  delay(5);
-}
-void click3(void)
-{
-  myKeyboardReport(&keycombi_report[MyKeyCombi_3]);
-  hasKeyPressed = true;
-  Serial.println("button3");
-  delay(5);
-}
-void click4(void)
-{
-  myKeyboardReport(&keycombi_report[MyKeyCombi_4]);
-  hasKeyPressed = true;
-  Serial.println("button4");
-  delay(5);
-}
-void click5(void)
-{
-  myKeyboardReport(&keycombi_report[MyKeyCombi_5]);
-  hasKeyPressed = true;
-  Serial.println("button5");
-  delay(5);
-}
+void click0(void) { myKeyboardReport(MyKeyCombi_0); }
+void click1(void) { myKeyboardReport(MyKeyCombi_1); }
+void click2(void) { myKeyboardReport(MyKeyCombi_2); }
+void click3(void) { myKeyboardReport(MyKeyCombi_3); }
+void click4(void) { myKeyboardReport(MyKeyCombi_4); }
+void click5(void) { myKeyboardReport(MyKeyCombi_5); }
 void longpress6(void)
 {
-  Bluefruit.Periph.clearBonds();
-  Serial.println("clear bonding infos");
-  delay(5);
-  // digitalWrite(LED_RED, HIGH);
+    Bluefruit.Periph.clearBonds();
+    Serial.println("clear bonding infos");
+    delay(5);
+    // digitalWrite(LED_RED, HIGH);
 }
 void QSPIF_sleep(void)
 {
-  flashTransport.begin();
-  flashTransport.runCommand(0xB9);
-  flashTransport.end();
+    flashTransport.begin();
+    flashTransport.runCommand(0xB9);
+    flashTransport.end();
 }
 
 void connect_callback(uint16_t conn_handle);
@@ -191,210 +179,251 @@ void msc_flush_cb(void);
 
 void setup()
 {
-  // Enable DC-DC converter
-  NRF_POWER->DCDCEN = 1;
-  MyKeyCombi_init();
+    // Enable DC-DC converter
+    NRF_POWER->DCDCEN = 1;
+    MyKeyCombi_init();
 
-  pinMode(LED_RED, OUTPUT);
-  pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_BLUE, OUTPUT);
-  pinMode(D9, OUTPUT);
-  digitalWrite(D9, LOW); // for button6
-  digitalWrite(LED_RED, HIGH);
-  digitalWrite(LED_GREEN, HIGH);
-  digitalWrite(LED_BLUE, work_LED_status);
-#if 0
-  flash.begin();
-  if (flash.deepPowerDown() == false)
-  {
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LOW);
-    while (1)
+    pinMode(LED_RED, OUTPUT);
+    pinMode(LED_GREEN, OUTPUT);
+    pinMode(LED_BLUE, OUTPUT);
+    pinMode(D9, OUTPUT);
+    digitalWrite(D9, LOW); // for button6
+    digitalWrite(LED_RED, HIGH);
+    digitalWrite(LED_GREEN, HIGH);
+    digitalWrite(LED_BLUE, work_LED_status);
+
+    button0.attachClick(click0);
+    button1.attachClick(click1);
+    button2.attachClick(click2);
+    button3.attachClick(click3);
+    button4.attachClick(click4);
+    button5.attachClick(click5);
+    button6.attachLongPressStart(longpress6);
+    Bluefruit.Periph.setConnIntervalMS(30, 120);
+    Bluefruit.begin();
+    Bluefruit.autoConnLed(0);
+    Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
+                             // Configure and Start Device Information Service
+    bledis.setManufacturer("j1okabe");
+    bledis.setModel("xiao ble");
+    Bluefruit.setName("nRF52Keyboard");
+    Bluefruit.Periph.setConnectCallback(connect_callback);
+    Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+    Bluefruit.Periph.setConnSlaveLatency(20);
+    Bluefruit.Periph.setConnSupervisionTimeoutMS(4000);
+    // Bluefruit.Periph.
+    bledis.begin();
+    blebas.begin();
+    lastnotify = 100;
+    blebas.write(lastnotify);
+    /* Start BLE HID
+     * Note: Apple requires BLE device must have min connection interval >= 20m
+     * ( The smaller the connection interval the faster we could send data).
+     * However for HID and MIDI device, Apple could accept min connection
+     * interval up to 11.25 ms. Therefore BLEHidAdafruit::begin() will try to
+     * set the min and max connection interval to 11.25  ms and 15 ms
+     * respectively for best performance.
+     */
+    blehid.begin();
+    // Bluefruit.Periph.setConnIntervalMS(30, 120);
+    Bluefruit.Periph.setConnInterval(18, 24);
+    if(NRF_POWER->USBREGSTATUS & 0x0001)
     {
-      yield();
+        Serial.begin(115200);
+        delay(100);
+        // while (!Serial)
+        //   delay(10); // wait for native usb
+        // VBUS present
+        Serial.println("VBUS present");
+
+        if(flash.begin() == false)
+        {
+            Serial.println("flash.begin false");
+        };
+        // Set disk vendor id, product id and revision with string up to 8, 16,
+        // 4 characters respectively usb_msc.setID("Adafruit", "External Flash",
+        // "1.0");
+        usb_msc.setID("Adafruit", "Mass Storage", "1.0");
+
+        // Set callback
+        usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
+
+        // Set disk size, block size should be 512 regardless of spi flash page
+        // size
+
+        usb_msc.setCapacity(flash.size() / 512, 512);
+        // usb_msc.setCapacity(DISK_BLOCK_NUM, DISK_BLOCK_SIZE);
+
+        // MSC is ready for read/write
+        usb_msc.setUnitReady(true);
+
+        usb_msc.begin();
+        fatfs.begin(&flash);
+
+        Serial.println("Adafruit TinyUSB Mass Storage External Flash example");
+        Serial.print("JEDEC ID: 0x");
+        Serial.println(flash.getJEDECID(), HEX);
+        Serial.print("Flash size: ");
+        Serial.print(flash.size() / 1024);
+        Serial.println(" KB");
+        int16_t pagesize = flash.pageSize();
+        Serial.print(F("Page size: "));
+        Serial.println(pagesize);
+        int16_t numpages = flash.numPages();
+        Serial.print(F("Page num: "));
+        Serial.println(numpages);
     }
-  }
-  flash.end();
-#endif
-  // put your setup code here, to run once:
+    else
+    {
+        // loadmapfile();
+        QSPIF_sleep();
+    }
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    // Bluefruit.Advertising.addTxPower();
+    Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
 
-  // int result = myFunction(2, 3);
-  button0.attachClick(click0);
-  button1.attachClick(click1);
-  button2.attachClick(click2);
-  button3.attachClick(click3);
-  button4.attachClick(click4);
-  button5.attachClick(click5);
-  button6.attachLongPressStart(longpress6);
-  Bluefruit.Periph.setConnIntervalMS(30, 120);
-  Bluefruit.begin();
-  Bluefruit.autoConnLed(0);
-  Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
-                           // Configure and Start Device Information Service
-  bledis.setManufacturer("j1okabe");
-  bledis.setModel("xiao ble");
-  Bluefruit.setName("nRF52Keyboard");
-  Bluefruit.Periph.setConnectCallback(connect_callback);
-  Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
-  Bluefruit.Periph.setConnSlaveLatency(20);
-  Bluefruit.Periph.setConnSupervisionTimeoutMS(4000);
-  // Bluefruit.Periph.
-  bledis.begin();
-  blebas.begin();
-  lastnotify = 100;
-  blebas.write(lastnotify);
-  /* Start BLE HID
-   * Note: Apple requires BLE device must have min connection interval >= 20m
-   * ( The smaller the connection interval the faster we could send data).
-   * However for HID and MIDI device, Apple could accept min connection interval
-   * up to 11.25 ms. Therefore BLEHidAdafruit::begin() will try to set the min and max
-   * connection interval to 11.25  ms and 15 ms respectively for best performance.
-   */
-  blehid.begin();
-  // Bluefruit.Periph.setConnIntervalMS(30, 120);
-  Bluefruit.Periph.setConnInterval(18, 24);
-  if (NRF_POWER->USBREGSTATUS & 0x0001)
-  {
-    Serial.begin(115200);
-    delay(100);
-    // VBUS present
-    Serial.println("VBUS present");
-    // flash.begin();
+    // Include BLE HID service
+    Bluefruit.Advertising.addService(blehid);
 
-    // // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
-    // usb_msc.setID("Adafruit", "External Flash", "1.0");
+    // Include BLE battery service
+    Bluefruit.Advertising.addService(blebas);
 
-    // // Set callback
-    // usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
+    // There is enough room for the dev name in the advertising packet
+    Bluefruit.Advertising.addName();
 
-    // // Set disk size, block size should be 512 regardless of spi flash page size
-    // usb_msc.setCapacity(flash.size() / 512, 512);
-
-    // // MSC is ready for read/write
-    // usb_msc.setUnitReady(true);
-
-    // usb_msc.begin();
-
-    // // Init file system on the flash
-    // fatfs.begin(&flash);
-  }
-  else
-  {
-    QSPIF_sleep();
-  }
-  // Advertising packet
-  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-  // Bluefruit.Advertising.addTxPower();
-  Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
-
-  // Include BLE HID service
-  Bluefruit.Advertising.addService(blehid);
-
-  // Include BLE battery service
-  Bluefruit.Advertising.addService(blebas);
-
-  // There is enough room for the dev name in the advertising packet
-  Bluefruit.Advertising.addName();
-
-  Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-  Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
-  Bluefruit.Advertising.start(0);             // 0 = Don't stop advertising after n seconds
-  lastMeasure = 0;
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(20); // number of seconds in fast mode
+    Bluefruit.Advertising.start(
+        0); // 0 = Don't stop advertising after n seconds
+    lastMeasure = 0;
 }
 
 void loop()
 {
-  // int32_t rawtotal;
-  uint32_t ms = millis();
-  button0.tick();
-  button1.tick();
-  button2.tick();
-  button3.tick();
-  button4.tick();
-  button5.tick();
-  button6.tick();
+    // int32_t rawtotal;
+    uint32_t ms = millis();
+    button0.tick();
+    button1.tick();
+    button2.tick();
+    button3.tick();
+    button4.tick();
+    button5.tick();
+    button6.tick();
 
-  // Only send KeyRelease if previously pressed to avoid sending
-  // multiple keyRelease reports (that consume memory and bandwidth)
-  if (hasKeyPressed)
-  {
-    hasKeyPressed = false;
-    blehid.keyRelease();
-
-    // Delay a bit after a report
-    delay(5);
-  }
-  if (ms - lastMeasure > 3000)
-  {
-    lastMeasure = ms;
-    Bluefruit.autoConnLed(false);
-    digitalWrite(LED_RED, HIGH);
-
-    // pinMode(VBAT_ENABLE, OUTPUT);
-    // digitalWrite(VBAT_ENABLE, LOW);
-    analogReference(AR_INTERNAL_1_8);
-    // Set the resolution to 12-bit (0..4095)
-    analogReadResolution(12); // Can be 8, 10, 12 or 14
-    // Let the ADC settle
-    delay(1);
-
-    rawvalues[vindex] = (uint16_t)analogRead(A0);
-    // Set the ADC back to the default settings
-    analogReference(AR_DEFAULT);
-    analogReadResolution(10);
-    // pinMode(VBAT_ENABLE, INPUT);
-    vindex = (vindex + 1) & BAT_AVERAGE_MASK;
-    count = min(count + 1, BAT_AVERAGE_COUNT);
-    uint16_t rawtotal = 0;
-    for (int i = 0; i < count; i++)
-      rawtotal += rawvalues[i];
-    // 10bit, Vref=3.6V, 分圧比1000:510
-    // double volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510;
-    uint16_t mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
-    uint16_t volt1000 = mV;
-    if (volt1000 > 1400)
+    // Only send KeyRelease if previously pressed to avoid sending
+    // multiple keyRelease reports (that consume memory and bandwidth)
+    if(hasKeyPressed)
     {
-      volt1000 = 1400;
+        hasKeyPressed = false;
+        blehid.keyRelease();
+
+        // Delay a bit after a report
+        delay(5);
     }
-    if (volt1000 < 900)
+    if(ms - lastMeasure > 3000)
     {
-      volt1000 = 900;
-    }
-    uint8_t value = (uint8_t)(map(volt1000, 900, 1400, 1, 100));
-    if (lastnotify != value)
-    {
-      lastnotify = value;
+        lastMeasure = ms;
+        Bluefruit.autoConnLed(false);
+        digitalWrite(LED_RED, HIGH);
+
+        // pinMode(VBAT_ENABLE, OUTPUT);
+        // digitalWrite(VBAT_ENABLE, LOW);
+        analogReference(AR_INTERNAL_1_8);
+        // Set the resolution to 12-bit (0..4095)
+        analogReadResolution(12); // Can be 8, 10, 12 or 14
+        // Let the ADC settle
+        delay(1);
+
+        rawvalues[vindex] = (uint16_t)analogRead(A0);
+        // Set the ADC back to the default settings
+        analogReference(AR_DEFAULT);
+        analogReadResolution(10);
+        // pinMode(VBAT_ENABLE, INPUT);
+        vindex = (vindex + 1) & BAT_AVERAGE_MASK;
+        count = min(count + 1, BAT_AVERAGE_COUNT);
+        uint16_t rawtotal = 0;
+        for(int i = 0; i < count; i++)
+            rawtotal += rawvalues[i];
+        // 10bit, Vref=3.6V, 分圧比1000:510
+        // double volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510;
+        uint16_t mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
+        uint16_t volt1000 = mV;
+        if(volt1000 > 1400)
+        {
+            volt1000 = 1400;
+        }
+        if(volt1000 < 900)
+        {
+            volt1000 = 900;
+        }
+        uint8_t value = (uint8_t)(map(volt1000, 900, 1400, 1, 100));
+        if(lastnotify != value)
+        {
+            lastnotify = value;
 #if 1
-      if (mV <= 900)
-      {
-        myBasNotyfy(1);
-      }
-      else
-      {
-        myBasNotyfy(value);
-      }
+            if(mV <= 900)
+            {
+                myBasNotyfy(1);
+            }
+            else
+            {
+                myBasNotyfy(value);
+            }
 #endif
+        }
+
+        Serial.printf("battery mV %d notify %d", mV, value);
+        Serial.println();
     }
+    if(fs_changed)
+    {
+        fs_changed = false;
 
-    Serial.printf("battery mV %d notify %d", mV, value);
-    Serial.println();
-  }
+        if(!root.open("/"))
+        {
+            Serial.println("open root failed");
+            return;
+        }
 
-  delay(50);
+        Serial.println("Flash contents:");
+
+        // Open next file in root.
+        // Warning, openNext starts at the current directory position
+        // so a rewind of the directory may be required.
+        while(file.openNext(&root, O_RDONLY))
+        {
+            file.printFileSize(&Serial);
+            Serial.write(' ');
+            file.printName(&Serial);
+            if(file.isDir())
+            {
+                // Indicate a directory.
+                Serial.write('/');
+            }
+            Serial.println();
+            file.close();
+        }
+
+        root.close();
+
+        Serial.println();
+    }
+    delay(50);
 }
 
 void connect_callback(uint16_t conn_handle)
 {
-  // Get the reference to current connection
-  BLEConnection *connection = Bluefruit.Connection(conn_handle);
+    // Get the reference to current connection
+    BLEConnection *connection = Bluefruit.Connection(conn_handle);
 
-  char central_name[32] = {0};
-  connection->getPeerName(central_name, sizeof(central_name));
+    char central_name[32] = {0};
+    connection->getPeerName(central_name, sizeof(central_name));
 
-  Serial.print("Connected to ");
-  Serial.println(central_name);
-  // digitalWrite(LED_RED, HIGH);
+    Serial.print("Connected to ");
+    Serial.println(central_name);
+    // digitalWrite(LED_RED, HIGH);
 }
 
 /**
@@ -404,12 +433,12 @@ void connect_callback(uint16_t conn_handle)
  */
 void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 {
-  (void)conn_handle;
-  (void)reason;
+    (void)conn_handle;
+    (void)reason;
 
-  Serial.println();
-  Serial.print("Disconnected, reason = 0x");
-  Serial.println(reason, HEX);
+    Serial.println();
+    Serial.print("Disconnected, reason = 0x");
+    Serial.println(reason, HEX);
 }
 
 // Callback invoked when received READ10 command.
@@ -417,9 +446,18 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 // return number of copied bytes (must be multiple of block size)
 int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize)
 {
-  // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
-  // already include 4K sector caching internally. We don't need to cache it, yahhhh!!
-  return flash.readBlocks(lba, (uint8_t *)buffer, bufsize / 512) ? bufsize : -1;
+#ifdef RAMDISK
+    uint8_t const *addr = msc_disk[lba];
+    memcpy(buffer, addr, bufsize);
+
+    return bufsize;
+#else
+    // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
+    // already include 4K sector caching internally. We don't need to cache it,
+    // yahhhh!!
+    return flash.readBlocks(lba, (uint8_t *)buffer, bufsize / 512) ? bufsize
+                                                                   : -1;
+#endif
 }
 
 // Callback invoked when received WRITE10 command.
@@ -427,28 +465,88 @@ int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize)
 // return number of written bytes (must be multiple of block size)
 int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize)
 {
-  digitalWrite(LED_BUILTIN, HIGH);
+#ifdef RAMDISK
+    uint8_t *addr = msc_disk[lba];
+    memcpy(addr, buffer, bufsize);
 
-  // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
-  // already include 4K sector caching internally. We don't need to cache it, yahhhh!!
-  return flash.writeBlocks(lba, buffer, bufsize / 512) ? bufsize : -1;
+    return bufsize;
+#else
+    digitalWrite(LED_GREEN, LOW);
+
+    // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
+    // already include 4K sector caching internally. We don't need to cache it,
+    // yahhhh!!
+    return flash.writeBlocks(lba, buffer, bufsize / 512) ? bufsize : -1;
+#endif
 }
 
-// Callback invoked when WRITE10 command is completed (status received and accepted by host).
-// used to flush any pending cache.
+// Callback invoked when WRITE10 command is completed (status received and
+// accepted by host). used to flush any pending cache.
 void msc_flush_cb(void)
 {
-  // sync with flash
-  flash.syncBlocks();
+#ifdef RAMDISK
+#else
+    // sync with flash
+    flash.syncBlocks();
 
-  // clear file system's cache to force refresh
-  fatfs.cacheClear();
+    // clear file system's cache to force refresh
+    fatfs.cacheClear();
 
-  fs_changed = true;
+    fs_changed = true;
 
-  digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_GREEN, HIGH);
+#endif
 }
 
+void loadmapfile(void)
+{
+    char iniheader[8] = {0};
+    char modifier[] = "modifier";
+    const char *modifierstr[3] = {"GUI", "CTRL", "ALT"};
+    char key[] = "key";
+    char *readstr;
+
+    if(file.open(inifilename, O_RDONLY))
+    {
+        // open succsess
+        for(int i = 0; i < KEYSNUM; i++)
+        {
+            memclr(iniheader, sizeof(iniheader));
+            memcpy(iniheader, "key", 3);
+            iniheader[3] = '0' + i;
+            readstr = inifileString(file, (char *)iniheader, (char *)modifier);
+            if(strcmp(readstr, modifierstr[myGUI]) == 0)
+            {
+                keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTGUI;
+            }
+            else if(strcmp(readstr, modifierstr[myCTRL]) == 0)
+            {
+                keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
+            }
+            else if(strcmp(readstr, modifierstr[myALT]) == 0)
+            {
+                keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTALT;
+            }
+            else
+            {
+                keycombi_report[i].modifier = 0;
+            }
+            free(readstr);
+            readstr = inifileString(file, (char *)iniheader, (char *)key);
+            if(readstr[0] < 128)
+            {
+                int tnum = readstr[0];
+                keycombi_report[i].keycode[0] = conv_table[tnum][1];
+            }
+            else
+            {
+                keycombi_report[i].keycode[0] = 0;
+            }
+            free(readstr);
+        }
+        file.close();
+    }
+}
 // https://days-of-programming.blogspot.com/search/label/nRF52840
 
 // XIAO BLEをArduino開発するときの2種のボードライブラリの違い
