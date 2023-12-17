@@ -12,7 +12,7 @@
 // #define DISK_BLOCK_SIZE 512
 // #define RAMDISK
 // #include "ramdisk.h"
-
+#define DEBUG
 /*
 .pio\libdeps\xiaoble_adafruit_nrf52\Adafruit
 SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
@@ -22,7 +22,7 @@ SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
 
 
 */
-const char *inifilename = "keymap.ini";
+const char *inifilename = "config.ini";
 #define KEYSNUM 5
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
@@ -67,7 +67,7 @@ bool fs_changed;
 #define BAT_AVERAGE_MASK 0x000F
 // #define VBAT_MV_PER_LSB   (0.73242188F)   // 3.0V ADC range and 12-bit ADC
 // resolution = 3000mV/4096
-#define VBAT_MV_PER_LSB                                                        \
+#define VBAT_MV_PER_LSB \
     (0.439453126F) // 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
 
 BLEDis bledis;
@@ -86,9 +86,11 @@ hid_keyboard_report_t keycombi_report[6];
 int work_LED_status = HIGH;
 enum Mymodifier
 {
-    myGUI,
+    myWIN,
+    myCMD,
     myCTRL,
-    myALT
+    myALT,
+    myOPT
 };
 
 enum mycombi
@@ -135,7 +137,7 @@ void MyKeyCombi_init(void)
 void myKeyboardReport(mycombi combi)
 {
     BLEConnection *connection = Bluefruit.Connection(0);
-    if(connection && connection->connected() && connection->secured())
+    if (connection && connection->connected() && connection->secured())
     {
         blehid.keyboardReport(&keycombi_report[combi]);
     }
@@ -146,7 +148,7 @@ void myKeyboardReport(mycombi combi)
 void myBasNotyfy(uint8_t value)
 {
     BLEConnection *connection = Bluefruit.Connection(0);
-    if(connection && connection->connected() && connection->secured())
+    if (connection && connection->connected() && connection->secured())
     {
         blebas.notify(value);
     }
@@ -227,16 +229,16 @@ void setup()
     blehid.begin();
     // Bluefruit.Periph.setConnIntervalMS(30, 120);
     Bluefruit.Periph.setConnInterval(18, 24);
-    if(NRF_POWER->USBREGSTATUS & 0x0001)
+    delay(100);
+    if (NRF_POWER->USBREGSTATUS & 0x0001)
     {
         Serial.begin(115200);
-        delay(100);
-        // while (!Serial)
-        //   delay(10); // wait for native usb
+        // delay(100);
+
         // VBUS present
         Serial.println("VBUS present");
 
-        if(flash.begin() == false)
+        if (flash.begin() == false)
         {
             Serial.println("flash.begin false");
         };
@@ -259,7 +261,10 @@ void setup()
 
         usb_msc.begin();
         fatfs.begin(&flash);
-
+#ifdef DEBUG
+        while (!Serial)
+            delay(10); // wait for native usb
+#endif
         Serial.println("Adafruit TinyUSB Mass Storage External Flash example");
         Serial.print("JEDEC ID: 0x");
         Serial.println(flash.getJEDECID(), HEX);
@@ -294,7 +299,7 @@ void setup()
 
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(20); // number of seconds in fast mode
+    Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
     Bluefruit.Advertising.start(
         0); // 0 = Don't stop advertising after n seconds
     lastMeasure = 0;
@@ -314,7 +319,7 @@ void loop()
 
     // Only send KeyRelease if previously pressed to avoid sending
     // multiple keyRelease reports (that consume memory and bandwidth)
-    if(hasKeyPressed)
+    if (hasKeyPressed)
     {
         hasKeyPressed = false;
         blehid.keyRelease();
@@ -322,7 +327,7 @@ void loop()
         // Delay a bit after a report
         delay(5);
     }
-    if(ms - lastMeasure > 3000)
+    if (ms - lastMeasure > 3000)
     {
         lastMeasure = ms;
         Bluefruit.autoConnLed(false);
@@ -344,26 +349,26 @@ void loop()
         vindex = (vindex + 1) & BAT_AVERAGE_MASK;
         count = min(count + 1, BAT_AVERAGE_COUNT);
         uint16_t rawtotal = 0;
-        for(int i = 0; i < count; i++)
+        for (int i = 0; i < count; i++)
             rawtotal += rawvalues[i];
         // 10bit, Vref=3.6V, 分圧比1000:510
         // double volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510;
         uint16_t mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
         uint16_t volt1000 = mV;
-        if(volt1000 > 1400)
+        if (volt1000 > 1400)
         {
             volt1000 = 1400;
         }
-        if(volt1000 < 900)
+        if (volt1000 < 900)
         {
             volt1000 = 900;
         }
         uint8_t value = (uint8_t)(map(volt1000, 900, 1400, 1, 100));
-        if(lastnotify != value)
+        if (lastnotify != value)
         {
             lastnotify = value;
 #if 1
-            if(mV <= 900)
+            if (mV <= 900)
             {
                 myBasNotyfy(1);
             }
@@ -377,11 +382,10 @@ void loop()
         Serial.printf("battery mV %d notify %d", mV, value);
         Serial.println();
     }
-    if(fs_changed)
+    if (fs_changed)
     {
-        fs_changed = false;
 
-        if(!root.open("/"))
+        if (!root.open("/"))
         {
             Serial.println("open root failed");
             return;
@@ -392,12 +396,12 @@ void loop()
         // Open next file in root.
         // Warning, openNext starts at the current directory position
         // so a rewind of the directory may be required.
-        while(file.openNext(&root, O_RDONLY))
+        while (file.openNext(&root, O_RDONLY))
         {
             file.printFileSize(&Serial);
             Serial.write(' ');
             file.printName(&Serial);
-            if(file.isDir())
+            if (file.isDir())
             {
                 // Indicate a directory.
                 Serial.write('/');
@@ -409,6 +413,7 @@ void loop()
         root.close();
 
         Serial.println();
+        fs_changed = false;
     }
     delay(50);
 }
@@ -502,30 +507,43 @@ void loadmapfile(void)
 {
     char iniheader[8] = {0};
     char modifier[] = "modifier";
-    const char *modifierstr[3] = {"GUI", "CTRL", "ALT"};
+    const char *modifierstr[] = {"WIN", "CMD", "CTRL", "ALT", "OPT"};
     char key[] = "key";
     char *readstr;
+    // char *find;
 
-    if(file.open(inifilename, O_RDONLY))
+    if (file.open(inifilename, O_RDONLY))
     {
         // open succsess
-        for(int i = 0; i < KEYSNUM; i++)
+        for (int i = 0; i < KEYSNUM; i++)
         {
             memclr(iniheader, sizeof(iniheader));
             memcpy(iniheader, "key", 3);
             iniheader[3] = '0' + i;
             readstr = inifileString(file, (char *)iniheader, (char *)modifier);
-            if(strcmp(readstr, modifierstr[myGUI]) == 0)
+            if (readstr != NULL)
             {
-                keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTGUI;
-            }
-            else if(strcmp(readstr, modifierstr[myCTRL]) == 0)
-            {
-                keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTCTRL;
-            }
-            else if(strcmp(readstr, modifierstr[myALT]) == 0)
-            {
-                keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTALT;
+                keycombi_report[i].modifier = 0;
+                if (strstr(readstr, modifierstr[myWIN]) != NULL)
+                {
+                    keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTGUI;
+                }
+                if (strstr(readstr, modifierstr[myCMD]) != NULL)
+                {
+                    keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTGUI;
+                }
+                if (strstr(readstr, modifierstr[myCTRL]) != NULL)
+                {
+                    keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTCTRL;
+                }
+                if (strstr(readstr, modifierstr[myALT]) != NULL)
+                {
+                    keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
+                }
+                if (strstr(readstr, modifierstr[myOPT]) != NULL)
+                {
+                    keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
+                }
             }
             else
             {
@@ -533,10 +551,14 @@ void loadmapfile(void)
             }
             free(readstr);
             readstr = inifileString(file, (char *)iniheader, (char *)key);
-            if(readstr[0] < 128)
+            if (readstr != NULL && readstr[0] < 128)
             {
                 int tnum = readstr[0];
                 keycombi_report[i].keycode[0] = conv_table[tnum][1];
+                if (conv_table[tnum][0] == 1)
+                {
+                    keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTSHIFT;
+                }
             }
             else
             {
