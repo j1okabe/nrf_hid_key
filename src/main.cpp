@@ -62,7 +62,7 @@ Adafruit_USBD_MSC usb_msc;
 
 // Set to true when PC write to flash
 bool fs_changed;
-
+uint32 lastflashed;
 #define BAT_AVERAGE_COUNT 16
 #define BAT_AVERAGE_MASK 0x000F
 // #define VBAT_MV_PER_LSB   (0.73242188F)   // 3.0V ADC range and 12-bit ADC
@@ -382,7 +382,8 @@ void loop()
         Serial.printf("battery mV %d notify %d", mV, value);
         Serial.println();
     }
-    if (fs_changed)
+    uint32_t ms2 = millis();
+    if (fs_changed && ((ms2 - lastflashed) > 500))
     {
 
         if (!root.open("/"))
@@ -498,6 +499,7 @@ void msc_flush_cb(void)
     fatfs.cacheClear();
 
     fs_changed = true;
+    lastflashed = millis();
 
     digitalWrite(LED_GREEN, HIGH);
 #endif
