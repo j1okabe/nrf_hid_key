@@ -22,7 +22,9 @@ SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
 
 
 */
+const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
+char mydevicename[14] = {0};
 #define KEYSNUM 10
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
@@ -197,6 +199,7 @@ void msc_flush_cb(void);
 
 void setup()
 {
+    char lastletter[3] = {0};
     // Enable DC-DC converter
     NRF_POWER->DCDCEN = 1;
     MyKeyCombi_init();
@@ -225,7 +228,12 @@ void setup()
                              // Configure and Start Device Information Service
     bledis.setManufacturer("j1okabe");
     bledis.setModel("xiao ble");
-    Bluefruit.setName("nRF52Keyboard");
+    ble_gap_addr_t myaddres = Bluefruit.getAddr();
+    snprintf(lastletter, 3, "%2x", myaddres.addr[0]);
+    memcpy(mydevicename, basedevicename, strlen(basedevicename));
+    memcpy(&mydevicename[strlen(basedevicename)], lastletter, strlen(lastletter));
+    Bluefruit.setName(mydevicename);
+    // Bluefruit.setName("nRF52Keyboard");
     Bluefruit.Periph.setConnectCallback(connect_callback);
     Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
     Bluefruit.Periph.setConnSlaveLatency(20);
@@ -296,7 +304,11 @@ void setup()
         int16_t numpages = flash.numPages();
         Serial.print(F("Page num: "));
         Serial.println(numpages);
-        // loadmapfile();
+#if 0
+        while (!Serial)
+            delay(10); // wait for native usb
+#endif
+        loadmapfile();
     }
     else
     {
@@ -542,25 +554,29 @@ void loadmapfile(void)
     char modifier[] = "modifier";
     const char *modifierstr[] = {"WIN", "CMD", "CTRL", "ALT", "OPT"};
     char key[] = "key";
+    char positionstr[3] = {0};
     char *readstr;
     String loadsettingstr;
     // char *find;
 
     if (file.open(inifilename, O_RDONLY))
     {
-        loadsettingstr = "";
+
         // open succsess
         for (int i = 0; i < KEYSNUM; i++)
         {
+
             memclr(iniheader, sizeof(iniheader));
             memcpy(iniheader, "key", 3);
-            iniheader[3] = '0' + i;
+            sprintf(positionstr, "%d", i + 1);
+            loadsettingstr = String(positionstr);
+            memcpy(&iniheader[strlen(iniheader)], positionstr, strlen(positionstr));
             readstr = inifileString(file, (char *)iniheader, (char *)modifier);
             if (readstr != NULL)
             {
 
-                loadsettingstr.concat(i);
-                loadsettingstr.concat(": ");
+                // loadsettingstr.concat(i);
+                loadsettingstr.concat(" : ");
                 keycombi_report[i].modifier = 0;
                 if (strstr(readstr, modifierstr[myWIN]) != NULL)
                 {
