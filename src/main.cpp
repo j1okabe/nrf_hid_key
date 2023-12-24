@@ -12,7 +12,7 @@
 // #define DISK_BLOCK_SIZE 512
 // #define RAMDISK
 // #include "ramdisk.h"
-#define DEBUG
+// #define DEBUG
 /*
 .pio\libdeps\xiaoble_adafruit_nrf52\Adafruit
 SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
@@ -23,7 +23,7 @@ SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
 
 */
 const char *inifilename = "config.ini";
-#define KEYSNUM 5
+#define KEYSNUM 10
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
 
@@ -62,7 +62,7 @@ Adafruit_USBD_MSC usb_msc;
 
 // Set to true when PC write to flash
 bool fs_changed;
-uint32 lastflashed;
+uint32_t lastflashed;
 #define BAT_AVERAGE_COUNT 16
 #define BAT_AVERAGE_MASK 0x000F
 // #define VBAT_MV_PER_LSB   (0.73242188F)   // 3.0V ADC range and 12-bit ADC
@@ -82,7 +82,7 @@ uint16_t rawvalues[BAT_AVERAGE_COUNT] = {0};
 uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
 //  keycode[0] = conv_table[chr][1];
 
-hid_keyboard_report_t keycombi_report[6];
+hid_keyboard_report_t keycombi_report[KEYSNUM];
 int work_LED_status = HIGH;
 enum Mymodifier
 {
@@ -100,7 +100,12 @@ enum mycombi
     MyKeyCombi_2,
     MyKeyCombi_3,
     MyKeyCombi_4,
-    MyKeyCombi_5
+    MyKeyCombi_5,
+    MyKeyCombi_6,
+    MyKeyCombi_7,
+    MyKeyCombi_8,
+    MyKeyCombi_9,
+    MyKeyCombi_10
 };
 // Setup buttons
 OneButton button0(D1, true);
@@ -110,6 +115,11 @@ OneButton button3(D4, true);
 OneButton button4(D5, true);
 OneButton button5(D6, true);
 OneButton button6(D7, true);
+OneButton button7(D8, true);
+OneButton button8(D9, true);
+OneButton button9(D10, true);
+OneButton button10(PIN_NFC1, true);
+OneButton button11(PIN_NFC2, true);
 void loadmapfile(void);
 void MyKeyCombi_init(void)
 {
@@ -159,6 +169,12 @@ void click2(void) { myKeyboardReport(MyKeyCombi_2); }
 void click3(void) { myKeyboardReport(MyKeyCombi_3); }
 void click4(void) { myKeyboardReport(MyKeyCombi_4); }
 void click5(void) { myKeyboardReport(MyKeyCombi_5); }
+void click6(void) { myKeyboardReport(MyKeyCombi_6); }
+void click7(void) { myKeyboardReport(MyKeyCombi_7); }
+void click8(void) { myKeyboardReport(MyKeyCombi_8); }
+void click9(void) { myKeyboardReport(MyKeyCombi_9); }
+void click10(void) { myKeyboardReport(MyKeyCombi_10); }
+
 void longpress6(void)
 {
     Bluefruit.Periph.clearBonds();
@@ -201,6 +217,7 @@ void setup()
     button4.attachClick(click4);
     button5.attachClick(click5);
     button6.attachLongPressStart(longpress6);
+    // delay(100);
     Bluefruit.Periph.setConnIntervalMS(30, 120);
     Bluefruit.begin();
     Bluefruit.autoConnLed(0);
@@ -213,7 +230,7 @@ void setup()
     Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
     Bluefruit.Periph.setConnSlaveLatency(20);
     Bluefruit.Periph.setConnSupervisionTimeoutMS(4000);
-    // Bluefruit.Periph.
+
     bledis.begin();
     blebas.begin();
     lastnotify = 100;
@@ -230,13 +247,18 @@ void setup()
     // Bluefruit.Periph.setConnIntervalMS(30, 120);
     Bluefruit.Periph.setConnInterval(18, 24);
     delay(100);
-    if (NRF_POWER->USBREGSTATUS & 0x0001)
+    if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
         Serial.begin(115200);
-        // delay(100);
-
+        delay(10);
+#ifdef DEBUG
+        while (!Serial)
+            delay(10); // wait for native usb
+#endif
         // VBUS present
         Serial.println("VBUS present");
+        flashTransport.begin();
+        flashTransport.runCommand(0xAB);
 
         if (flash.begin() == false)
         {
@@ -261,10 +283,7 @@ void setup()
 
         usb_msc.begin();
         fatfs.begin(&flash);
-#ifdef DEBUG
-        while (!Serial)
-            delay(10); // wait for native usb
-#endif
+
         Serial.println("Adafruit TinyUSB Mass Storage External Flash example");
         Serial.print("JEDEC ID: 0x");
         Serial.println(flash.getJEDECID(), HEX);
@@ -277,10 +296,20 @@ void setup()
         int16_t numpages = flash.numPages();
         Serial.print(F("Page num: "));
         Serial.println(numpages);
+        // loadmapfile();
     }
     else
     {
-        // loadmapfile();
+#ifdef DEBUG
+        while (!Serial)
+            delay(10); // wait for native usb
+#endif
+        Serial.println("VBUS NOT present");
+        if (flash.begin())
+        {
+            loadmapfile();
+        };
+
         QSPIF_sleep();
     }
     // Advertising packet
@@ -383,9 +412,9 @@ void loop()
         Serial.println();
     }
     uint32_t ms2 = millis();
-    if (fs_changed && ((ms2 - lastflashed) > 500))
+    if (fs_changed && ((ms2 - lastflashed) > 1000))
     {
-
+#if 0
         if (!root.open("/"))
         {
             Serial.println("open root failed");
@@ -412,7 +441,9 @@ void loop()
         }
 
         root.close();
-
+#else
+        loadmapfile();
+#endif
         Serial.println();
         fs_changed = false;
     }
@@ -512,10 +543,12 @@ void loadmapfile(void)
     const char *modifierstr[] = {"WIN", "CMD", "CTRL", "ALT", "OPT"};
     char key[] = "key";
     char *readstr;
+    String loadsettingstr;
     // char *find;
 
     if (file.open(inifilename, O_RDONLY))
     {
+        loadsettingstr = "";
         // open succsess
         for (int i = 0; i < KEYSNUM; i++)
         {
@@ -525,31 +558,40 @@ void loadmapfile(void)
             readstr = inifileString(file, (char *)iniheader, (char *)modifier);
             if (readstr != NULL)
             {
+
+                loadsettingstr.concat(i);
+                loadsettingstr.concat(": ");
                 keycombi_report[i].modifier = 0;
                 if (strstr(readstr, modifierstr[myWIN]) != NULL)
                 {
                     keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTGUI;
+                    loadsettingstr.concat("GUI ");
                 }
                 if (strstr(readstr, modifierstr[myCMD]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTGUI;
+                    loadsettingstr.concat("GUI ");
                 }
                 if (strstr(readstr, modifierstr[myCTRL]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTCTRL;
+                    loadsettingstr.concat("CTRL ");
                 }
                 if (strstr(readstr, modifierstr[myALT]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
+                    loadsettingstr.concat("ALT ");
                 }
                 if (strstr(readstr, modifierstr[myOPT]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
+                    loadsettingstr.concat("ALT ");
                 }
             }
             else
             {
                 keycombi_report[i].modifier = 0;
+                loadsettingstr.concat("NO_MIDIFIER ");
             }
             free(readstr);
             readstr = inifileString(file, (char *)iniheader, (char *)key);
@@ -560,13 +602,18 @@ void loadmapfile(void)
                 if (conv_table[tnum][0] == 1)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTSHIFT;
+                    loadsettingstr.concat("SHIFT ");
                 }
+                loadsettingstr.concat(readstr[0]);
             }
             else
             {
                 keycombi_report[i].keycode[0] = 0;
+                loadsettingstr.concat("NO_KEY ");
             }
             free(readstr);
+            Serial.print(loadsettingstr);
+            Serial.println();
         }
         file.close();
     }
@@ -575,3 +622,6 @@ void loadmapfile(void)
 
 // XIAO BLEをArduino開発するときの2種のボードライブラリの違い
 // https://zenn.dev/ukkz/articles/a9ec6fc37b68b7
+
+// XIAO nRF52840 のVBUS判定
+// https://lipoyang.hatenablog.com/entry/2023/01/01/102737
