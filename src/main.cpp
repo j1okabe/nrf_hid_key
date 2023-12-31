@@ -154,7 +154,8 @@ void myKeyboardReport(mycombi combi)
         blehid.keyboardReport(&keycombi_report[combi]);
     }
     hasKeyPressed = true;
-    Serial.println("button0");
+    Serial.print("button");
+    Serial.println((int)combi);
     delay(5);
 }
 void myBasNotyfy(uint8_t value)
@@ -551,13 +552,16 @@ void msc_flush_cb(void)
 void loadmapfile(void)
 {
     char iniheader[8] = {0};
-    char modifier[] = "modifier";
+    const char modifier[] = "modifier";
     const char *modifierstr[] = {"WIN", "CMD", "CTRL", "ALT", "OPT"};
-    char key[] = "key";
+    const char key[] = "key";
+    const char pad[] = "PAD";
     char positionstr[3] = {0};
     char *readstr;
     String loadsettingstr;
-    // char *find;
+    int keystrlen;
+    char *padpos;
+    int padstrlen;
 
     if (file.open(inifilename, O_RDONLY))
     {
@@ -609,24 +613,65 @@ void loadmapfile(void)
                 keycombi_report[i].modifier = 0;
                 loadsettingstr.concat("NO_MIDIFIER ");
             }
+            keycombi_report[i].keycode[0] = 0;
             free(readstr);
             readstr = inifileString(file, (char *)iniheader, (char *)key);
-            if (readstr != NULL && readstr[0] < 128)
+            keystrlen = strlen(readstr);
+            switch (keystrlen)
             {
-                int tnum = readstr[0];
-                keycombi_report[i].keycode[0] = conv_table[tnum][1];
-                if (conv_table[tnum][0] == 1)
-                {
-                    keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTSHIFT;
-                    loadsettingstr.concat("SHIFT ");
-                }
-                loadsettingstr.concat(readstr[0]);
-            }
-            else
-            {
-                keycombi_report[i].keycode[0] = 0;
+            case 0:
                 loadsettingstr.concat("NO_KEY ");
+                break;
+            case 1:
+                if (readstr != NULL && readstr[0] < 128)
+                {
+                    int tnum = readstr[0];
+                    keycombi_report[i].keycode[0] = conv_table[tnum][1];
+                    if (conv_table[tnum][0] == 1)
+                    {
+                        keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTSHIFT;
+                        loadsettingstr.concat("SHIFT ");
+                    }
+                    loadsettingstr.concat(readstr[0]);
+                }
+                else
+                {
+                    loadsettingstr.concat("NO_KEY ");
+                }
+                break;
+            case 4:
+                padpos = strstr(readstr, pad);
+                padstrlen = strlen(padpos);
+                if (padpos != NULL && padstrlen == 4)
+                {
+                    switch (padpos[3])
+                    {
+                    case '*':
+                        keycombi_report[i].keycode[0] = HID_KEY_KEYPAD_MULTIPLY;
+                        break;
+                    case '+':
+                        keycombi_report[i].keycode[0] = HID_KEY_KEYPAD_ADD;
+                        break;
+                    case '-':
+                        keycombi_report[i].keycode[0] = HID_KEY_KEYPAD_SUBTRACT;
+                        break;
+                    default:
+                        keycombi_report[i].keycode[0] = 0;
+                        break;
+                    }
+                    loadsettingstr.concat(readstr);
+                }
+                else
+                {
+                    loadsettingstr.concat("NO_KEY ");
+                }
+                break;
+
+            default:
+                loadsettingstr.concat("NO_KEY ");
+                break;
             }
+
             free(readstr);
             Serial.print(loadsettingstr);
             Serial.println();
