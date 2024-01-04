@@ -86,6 +86,13 @@ uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
 
 hid_keyboard_report_t keycombi_report[KEYSNUM];
 int work_LED_status = HIGH;
+enum BatType
+{
+    eBT_dry,
+    eBT_NiMH
+};
+BatType currentBtype;
+uint16_t lifened[2] = {900, 1000};
 enum Mymodifier
 {
     myWIN,
@@ -110,18 +117,19 @@ enum mycombi
     MyKeyCombi_10
 };
 // Setup buttons
-OneButton button0(D1, true);
-OneButton button1(D2, true);
-OneButton button2(D3, true);
-OneButton button3(D4, true);
-OneButton button4(D5, true);
-OneButton button5(D6, true);
-OneButton button6(D7, true);
-OneButton button7(D8, true);
-OneButton button8(D9, true);
-OneButton button9(D10, true);
-OneButton button10(PIN_NFC1, true);
-OneButton button11(PIN_NFC2, true);
+OneButton button0(D10, true);
+OneButton button1(D9, true);
+OneButton button2(D8, true);
+OneButton button3(D7, true);
+OneButton button4(D6, true);
+OneButton button5(D5, true);
+OneButton button6(D4, true);
+OneButton button7(PIN_NFC2, true);
+OneButton button8(D3, true);
+OneButton button9(D2, true);
+OneButton button20(PIN_NFC1, true);
+// OneButton button10(D1, true);
+// OneButton button11(D0, true);
 void loadmapfile(void);
 void MyKeyCombi_init(void)
 {
@@ -178,7 +186,7 @@ void click8(void) { myKeyboardReport(MyKeyCombi_8); }
 void click9(void) { myKeyboardReport(MyKeyCombi_9); }
 void click10(void) { myKeyboardReport(MyKeyCombi_10); }
 
-void longpress6(void)
+void longpress20(void)
 {
     Bluefruit.Periph.clearBonds();
     Serial.println("clear bonding infos");
@@ -220,7 +228,12 @@ void setup()
     button3.attachClick(click3);
     button4.attachClick(click4);
     button5.attachClick(click5);
-    button6.attachLongPressStart(longpress6);
+    button6.attachClick(click6);
+    button7.attachClick(click7);
+    button8.attachClick(click8);
+    button9.attachClick(click9);
+    // button10.attachClick(click10);
+    button20.attachLongPressStart(longpress20);
     // delay(100);
     Bluefruit.Periph.setConnIntervalMS(30, 120);
     Bluefruit.begin();
@@ -358,6 +371,10 @@ void loop()
     button4.tick();
     button5.tick();
     button6.tick();
+    button7.tick();
+    button8.tick();
+    button9.tick();
+    button20.tick();
 
     // Only send KeyRelease if previously pressed to avoid sending
     // multiple keyRelease reports (that consume memory and bandwidth)
@@ -401,18 +418,23 @@ void loop()
         {
             volt1000 = 1400;
         }
-        if (volt1000 < 900)
+        if (volt1000 < lifened[currentBtype])
         {
-            volt1000 = 900;
+            volt1000 = lifened[currentBtype];
         }
-        uint8_t value = (uint8_t)(map(volt1000, 900, 1400, 1, 100));
+        uint8_t value = (uint8_t)(map(volt1000, lifened[currentBtype], 1400, 1, 100));
         if (lastnotify != value)
         {
             lastnotify = value;
 #if 1
-            if (mV <= 900)
+            if (mV <= lifened[currentBtype])
             {
                 myBasNotyfy(1);
+                if (currentBtype == eBT_NiMH)
+                {
+                    // system off
+                    sd_power_system_off();
+                }
             }
             else
             {
@@ -556,6 +578,10 @@ void loadmapfile(void)
     const char *modifierstr[] = {"WIN", "CMD", "CTRL", "ALT", "OPT"};
     const char key[] = "key";
     const char pad[] = "PAD";
+    const char strbatt[] = "BATT";
+    const char strtype[] = "TYPE";
+    const char strdry[] = "dry";
+    const char strnimh[] = "NiMH";
     char positionstr[3] = {0};
     char *readstr;
     String loadsettingstr;
@@ -676,6 +702,21 @@ void loadmapfile(void)
             Serial.print(loadsettingstr);
             Serial.println();
         }
+        readstr = inifileString(file, (char *)strbatt, (char *)strtype);
+        keystrlen = strlen(readstr);
+        if (readstr != NULL)
+        {
+            if (strstr(readstr, strdry) != NULL)
+            {
+                currentBtype = eBT_dry;
+            }
+            else if (strstr(readstr, strnimh) != NULL)
+            {
+                currentBtype = eBT_NiMH;
+            }
+        }
+
+        free(readstr);
         file.close();
     }
 }
