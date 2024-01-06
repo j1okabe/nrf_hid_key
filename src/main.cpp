@@ -114,7 +114,8 @@ enum mycombi
     MyKeyCombi_7,
     MyKeyCombi_8,
     MyKeyCombi_9,
-    MyKeyCombi_10
+    MyKeyCombi_10,
+    MyKeyCombi_11
 };
 // Setup buttons
 OneButton button0(D10, true);
@@ -205,69 +206,18 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason);
 int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize);
 int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize);
 void msc_flush_cb(void);
+void blestart(void);
+void usb_massstorage_start(void);
+void pin_and_button_attach(void);
 
+/* setup */
 void setup()
 {
-    char lastletter[3] = {0};
     // Enable DC-DC converter
     NRF_POWER->DCDCEN = 1;
     MyKeyCombi_init();
+    pin_and_button_attach();
 
-    pinMode(LED_RED, OUTPUT);
-    pinMode(LED_GREEN, OUTPUT);
-    pinMode(LED_BLUE, OUTPUT);
-    pinMode(D9, OUTPUT);
-    digitalWrite(D9, LOW); // for button6
-    digitalWrite(LED_RED, HIGH);
-    digitalWrite(LED_GREEN, HIGH);
-    digitalWrite(LED_BLUE, work_LED_status);
-
-    button0.attachClick(click0);
-    button1.attachClick(click1);
-    button2.attachClick(click2);
-    button3.attachClick(click3);
-    button4.attachClick(click4);
-    button5.attachClick(click5);
-    button6.attachClick(click6);
-    button7.attachClick(click7);
-    button8.attachClick(click8);
-    button9.attachClick(click9);
-    // button10.attachClick(click10);
-    button20.attachLongPressStart(longpress20);
-    // delay(100);
-    Bluefruit.Periph.setConnIntervalMS(30, 120);
-    Bluefruit.begin();
-    Bluefruit.autoConnLed(0);
-    Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
-                             // Configure and Start Device Information Service
-    bledis.setManufacturer("j1okabe");
-    bledis.setModel("xiao ble");
-    ble_gap_addr_t myaddres = Bluefruit.getAddr();
-    snprintf(lastletter, 3, "%2x", myaddres.addr[0]);
-    memcpy(mydevicename, basedevicename, strlen(basedevicename));
-    memcpy(&mydevicename[strlen(basedevicename)], lastletter, strlen(lastletter));
-    Bluefruit.setName(mydevicename);
-    // Bluefruit.setName("nRF52Keyboard");
-    Bluefruit.Periph.setConnectCallback(connect_callback);
-    Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
-    Bluefruit.Periph.setConnSlaveLatency(20);
-    Bluefruit.Periph.setConnSupervisionTimeoutMS(4000);
-
-    bledis.begin();
-    blebas.begin();
-    lastnotify = 100;
-    blebas.write(lastnotify);
-    /* Start BLE HID
-     * Note: Apple requires BLE device must have min connection interval >= 20m
-     * ( The smaller the connection interval the faster we could send data).
-     * However for HID and MIDI device, Apple could accept min connection
-     * interval up to 11.25 ms. Therefore BLEHidAdafruit::begin() will try to
-     * set the min and max connection interval to 11.25  ms and 15 ms
-     * respectively for best performance.
-     */
-    blehid.begin();
-    // Bluefruit.Periph.setConnIntervalMS(30, 120);
-    Bluefruit.Periph.setConnInterval(18, 24);
     delay(100);
     if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
@@ -279,45 +229,7 @@ void setup()
 #endif
         // VBUS present
         Serial.println("VBUS present");
-        flashTransport.begin();
-        flashTransport.runCommand(0xAB);
-
-        if (flash.begin() == false)
-        {
-            Serial.println("flash.begin false");
-        };
-        // Set disk vendor id, product id and revision with string up to 8, 16,
-        // 4 characters respectively usb_msc.setID("Adafruit", "External Flash",
-        // "1.0");
-        usb_msc.setID("Adafruit", "Mass Storage", "1.0");
-
-        // Set callback
-        usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
-
-        // Set disk size, block size should be 512 regardless of spi flash page
-        // size
-
-        usb_msc.setCapacity(flash.size() / 512, 512);
-        // usb_msc.setCapacity(DISK_BLOCK_NUM, DISK_BLOCK_SIZE);
-
-        // MSC is ready for read/write
-        usb_msc.setUnitReady(true);
-
-        usb_msc.begin();
-        fatfs.begin(&flash);
-
-        Serial.println("Adafruit TinyUSB Mass Storage External Flash example");
-        Serial.print("JEDEC ID: 0x");
-        Serial.println(flash.getJEDECID(), HEX);
-        Serial.print("Flash size: ");
-        Serial.print(flash.size() / 1024);
-        Serial.println(" KB");
-        int16_t pagesize = flash.pageSize();
-        Serial.print(F("Page size: "));
-        Serial.println(pagesize);
-        int16_t numpages = flash.numPages();
-        Serial.print(F("Page num: "));
-        Serial.println(numpages);
+        usb_massstorage_start();
 #if 0
         while (!Serial)
             delay(10); // wait for native usb
@@ -326,6 +238,7 @@ void setup()
     }
     else
     {
+        // battery operate
 #ifdef DEBUG
         while (!Serial)
             delay(10); // wait for native usb
@@ -338,28 +251,10 @@ void setup()
 
         QSPIF_sleep();
     }
-    // Advertising packet
-    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-    // Bluefruit.Advertising.addTxPower();
-    Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
-
-    // Include BLE HID service
-    Bluefruit.Advertising.addService(blehid);
-
-    // Include BLE battery service
-    Bluefruit.Advertising.addService(blebas);
-
-    // There is enough room for the dev name in the advertising packet
-    Bluefruit.Advertising.addName();
-
-    Bluefruit.Advertising.restartOnDisconnect(true);
-    Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
-    Bluefruit.Advertising.start(
-        0); // 0 = Don't stop advertising after n seconds
+    blestart();
     lastMeasure = 0;
 }
-
+/* main loop */
 void loop()
 {
     // int32_t rawtotal;
@@ -484,7 +379,30 @@ void loop()
     }
     delay(50);
 }
+void pin_and_button_attach(void)
+{
+    pinMode(LED_RED, OUTPUT);
+    pinMode(LED_GREEN, OUTPUT);
+    pinMode(LED_BLUE, OUTPUT);
+    pinMode(D9, OUTPUT);
+    digitalWrite(D9, LOW); // for button6
+    digitalWrite(LED_RED, HIGH);
+    digitalWrite(LED_GREEN, HIGH);
+    digitalWrite(LED_BLUE, work_LED_status);
 
+    button0.attachClick(click0);
+    button1.attachClick(click1);
+    button2.attachClick(click2);
+    button3.attachClick(click3);
+    button4.attachClick(click4);
+    button5.attachClick(click5);
+    button6.attachClick(click6);
+    button7.attachClick(click7);
+    button8.attachClick(click8);
+    button9.attachClick(click9);
+    // button10.attachClick(click10);
+    button20.attachLongPressStart(longpress20);
+}
 void connect_callback(uint16_t conn_handle)
 {
     // Get the reference to current connection
@@ -513,6 +431,48 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
     Serial.println(reason, HEX);
 }
 
+void usb_massstorage_start(void)
+{
+    flashTransport.begin();
+    flashTransport.runCommand(0xAB);
+
+    if (flash.begin() == false)
+    {
+        Serial.println("flash.begin false");
+    };
+    // Set disk vendor id, product id and revision with string up to 8, 16,
+    // 4 characters respectively usb_msc.setID("Adafruit", "External Flash",
+    // "1.0");
+    usb_msc.setID("Adafruit", "Mass Storage", "1.0");
+
+    // Set callback
+    usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
+
+    // Set disk size, block size should be 512 regardless of spi flash page
+    // size
+
+    usb_msc.setCapacity(flash.size() / 512, 512);
+    // usb_msc.setCapacity(DISK_BLOCK_NUM, DISK_BLOCK_SIZE);
+
+    // MSC is ready for read/write
+    usb_msc.setUnitReady(true);
+
+    usb_msc.begin();
+    fatfs.begin(&flash);
+
+    Serial.println("Adafruit TinyUSB Mass Storage External Flash example");
+    Serial.print("JEDEC ID: 0x");
+    Serial.println(flash.getJEDECID(), HEX);
+    Serial.print("Flash size: ");
+    Serial.print(flash.size() / 1024);
+    Serial.println(" KB");
+    int16_t pagesize = flash.pageSize();
+    Serial.print(F("Page size: "));
+    Serial.println(pagesize);
+    int16_t numpages = flash.numPages();
+    Serial.print(F("Page num: "));
+    Serial.println(numpages);
+}
 // Callback invoked when received READ10 command.
 // Copy disk's data to buffer (up to bufsize) and
 // return number of copied bytes (must be multiple of block size)
@@ -709,16 +669,74 @@ void loadmapfile(void)
             if (strstr(readstr, strdry) != NULL)
             {
                 currentBtype = eBT_dry;
+                Serial.println("battery type is dry battery");
             }
             else if (strstr(readstr, strnimh) != NULL)
             {
                 currentBtype = eBT_NiMH;
+                Serial.println("battery type is NiMH battery");
             }
         }
 
         free(readstr);
         file.close();
     }
+}
+void blestart(void)
+{
+    char lastletter[3] = {0};
+    Bluefruit.Periph.setConnIntervalMS(30, 120);
+    Bluefruit.begin();
+    Bluefruit.autoConnLed(0);
+    Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
+                             // Configure and Start Device Information Service
+    bledis.setManufacturer("j1okabe");
+    bledis.setModel("xiao ble");
+    ble_gap_addr_t myaddres = Bluefruit.getAddr();
+    snprintf(lastletter, 3, "%2x", myaddres.addr[0]);
+    memcpy(mydevicename, basedevicename, strlen(basedevicename));
+    memcpy(&mydevicename[strlen(basedevicename)], lastletter, strlen(lastletter));
+    Bluefruit.setName(mydevicename);
+    // Bluefruit.setName("nRF52Keyboard");
+    Bluefruit.Periph.setConnectCallback(connect_callback);
+    Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+    Bluefruit.Periph.setConnSlaveLatency(20);
+    Bluefruit.Periph.setConnSupervisionTimeoutMS(4000);
+
+    bledis.begin();
+    blebas.begin();
+    lastnotify = 100;
+    blebas.write(lastnotify);
+    /* Start BLE HID
+     * Note: Apple requires BLE device must have min connection interval >= 20m
+     * ( The smaller the connection interval the faster we could send data).
+     * However for HID and MIDI device, Apple could accept min connection
+     * interval up to 11.25 ms. Therefore BLEHidAdafruit::begin() will try to
+     * set the min and max connection interval to 11.25  ms and 15 ms
+     * respectively for best performance.
+     */
+    blehid.begin();
+    // Bluefruit.Periph.setConnIntervalMS(30, 120);
+    Bluefruit.Periph.setConnInterval(18, 24);
+    // Advertising packet
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    // Bluefruit.Advertising.addTxPower();
+    Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
+
+    // Include BLE HID service
+    Bluefruit.Advertising.addService(blehid);
+
+    // Include BLE battery service
+    Bluefruit.Advertising.addService(blebas);
+
+    // There is enough room for the dev name in the advertising packet
+    Bluefruit.Advertising.addName();
+
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
+    Bluefruit.Advertising.start(
+        0); // 0 = Don't stop advertising after n seconds
 }
 // https://days-of-programming.blogspot.com/search/label/nRF52840
 
