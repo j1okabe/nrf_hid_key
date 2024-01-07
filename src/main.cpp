@@ -71,7 +71,8 @@ uint32_t lastflashed;
 // resolution = 3000mV/4096
 #define VBAT_MV_PER_LSB \
     (0.439453126F) // 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
-
+#define PIN_INVCHG 23
+#define PIN_HICHG 22
 BLEDis bledis;
 BLEHidAdafruit blehid;
 BLEBas blebas;
@@ -81,6 +82,7 @@ int8_t vindex;
 int8_t count;
 uint8_t lastnotify;
 uint16_t rawvalues[BAT_AVERAGE_COUNT] = {0};
+bool lastIsCharging = false;
 uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
 //  keycode[0] = conv_table[chr][1];
 
@@ -89,7 +91,8 @@ int work_LED_status = HIGH;
 enum BatType
 {
     eBT_dry,
-    eBT_NiMH
+    eBT_NiMH,
+    eBT_liIon
 };
 BatType currentBtype;
 uint16_t lifened[2] = {900, 1000};
@@ -185,7 +188,7 @@ void click6(void) { myKeyboardReport(MyKeyCombi_6); }
 void click7(void) { myKeyboardReport(MyKeyCombi_7); }
 void click8(void) { myKeyboardReport(MyKeyCombi_8); }
 void click9(void) { myKeyboardReport(MyKeyCombi_9); }
-void click10(void) { myKeyboardReport(MyKeyCombi_10); }
+// void click10(void) { myKeyboardReport(MyKeyCombi_10); }
 
 void longpress20(void)
 {
@@ -209,7 +212,8 @@ void msc_flush_cb(void);
 void blestart(void);
 void usb_massstorage_start(void);
 void pin_and_button_attach(void);
-
+void measure_and_notify(void);
+bool battery_isCharging(void);
 /* setup */
 void setup()
 {
@@ -251,6 +255,13 @@ void setup()
 
         QSPIF_sleep();
     }
+    if (currentBtype == eBT_liIon)
+    {
+        // High speed charging (100mA)
+        pinMode(PIN_HICHG, OUTPUT);
+        digitalWrite(PIN_HICHG, LOW);
+        pinMode(PIN_INVCHG, INPUT);
+    }
     blestart();
     lastMeasure = 0;
 }
@@ -284,62 +295,7 @@ void loop()
     if (ms - lastMeasure > 3000)
     {
         lastMeasure = ms;
-        Bluefruit.autoConnLed(false);
-        digitalWrite(LED_RED, HIGH);
-
-        // pinMode(VBAT_ENABLE, OUTPUT);
-        // digitalWrite(VBAT_ENABLE, LOW);
-        analogReference(AR_INTERNAL_1_8);
-        // Set the resolution to 12-bit (0..4095)
-        analogReadResolution(12); // Can be 8, 10, 12 or 14
-        // Let the ADC settle
-        delay(1);
-
-        rawvalues[vindex] = (uint16_t)analogRead(A0);
-        // Set the ADC back to the default settings
-        analogReference(AR_DEFAULT);
-        analogReadResolution(10);
-        // pinMode(VBAT_ENABLE, INPUT);
-        vindex = (vindex + 1) & BAT_AVERAGE_MASK;
-        count = min(count + 1, BAT_AVERAGE_COUNT);
-        uint16_t rawtotal = 0;
-        for (int i = 0; i < count; i++)
-            rawtotal += rawvalues[i];
-        // 10bit, Vref=3.6V, 分圧比1000:510
-        // double volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510;
-        uint16_t mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
-        uint16_t volt1000 = mV;
-        if (volt1000 > 1400)
-        {
-            volt1000 = 1400;
-        }
-        if (volt1000 < lifened[currentBtype])
-        {
-            volt1000 = lifened[currentBtype];
-        }
-        uint8_t value = (uint8_t)(map(volt1000, lifened[currentBtype], 1400, 1, 100));
-        if (lastnotify != value)
-        {
-            lastnotify = value;
-#if 1
-            if (mV <= lifened[currentBtype])
-            {
-                myBasNotyfy(1);
-                if (currentBtype == eBT_NiMH)
-                {
-                    // system off
-                    sd_power_system_off();
-                }
-            }
-            else
-            {
-                myBasNotyfy(value);
-            }
-#endif
-        }
-
-        Serial.printf("battery mV %d notify %d", mV, value);
-        Serial.println();
+        measure_and_notify();
     }
     uint32_t ms2 = millis();
     if (fs_changed && ((ms2 - lastflashed) > 1000))
@@ -378,6 +334,134 @@ void loop()
         fs_changed = false;
     }
     delay(50);
+}
+void measure_and_notify(void)
+{
+    uint16_t mV = 0;
+    uint16_t volt1000;
+    uint8_t value = 0;
+    uint16_t rawtotal = 0;
+    bool isCharging;
+    double volt;
+    Bluefruit.autoConnLed(false);
+    digitalWrite(LED_RED, HIGH);
+    switch (currentBtype)
+    {
+    case eBT_dry:
+    /* FALLTHROUGH */
+    case eBT_NiMH:
+        analogReference(AR_INTERNAL_1_8);
+        // Set the resolution to 12-bit (0..4095)
+        analogReadResolution(12); // Can be 8, 10, 12 or 14
+        // Let the ADC settle
+        delay(1);
+
+        rawvalues[vindex] = (uint16_t)analogRead(A0);
+        // Set the ADC back to the default settings
+        analogReference(AR_DEFAULT);
+        analogReadResolution(10);
+        vindex = (vindex + 1) & BAT_AVERAGE_MASK;
+        count = min(count + 1, BAT_AVERAGE_COUNT);
+        rawtotal = 0;
+        for (int i = 0; i < count; i++)
+        {
+            rawtotal += rawvalues[i];
+        }
+        mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
+        volt1000 = mV;
+        if (volt1000 > 1400)
+        {
+            volt1000 = 1400;
+        }
+        if (volt1000 < lifened[currentBtype])
+        {
+            volt1000 = lifened[currentBtype];
+        }
+        value = (uint8_t)(map(volt1000, lifened[currentBtype], 1400, 1, 100));
+        if (lastnotify != value)
+        {
+            lastnotify = value;
+#if 1
+            if (mV <= lifened[currentBtype])
+            {
+                myBasNotyfy(1);
+                if (currentBtype == eBT_NiMH)
+                {
+                    // system off
+                    sd_power_system_off();
+                }
+            }
+            else
+            {
+                myBasNotyfy(value);
+            }
+#endif
+            break;
+
+        case eBT_liIon:
+            isCharging = battery_isCharging();
+            if (lastIsCharging != isCharging)
+            { // 充電状態が変わったらリセット
+                vindex = 0;
+                count = 0;
+            }
+
+            pinMode(VBAT_ENABLE, OUTPUT);
+            digitalWrite(VBAT_ENABLE, LOW);
+            analogReference(AR_DEFAULT);
+            analogReadResolution(10);
+            rawvalues[vindex] = (uint16_t)analogRead(PIN_VBAT);
+            pinMode(VBAT_ENABLE, INPUT);
+
+            vindex = (vindex + 1) & BAT_AVERAGE_MASK;
+            count = min(count + 1, BAT_AVERAGE_COUNT);
+            rawtotal = 0;
+            for (int i = 0; i < count; i++)
+            {
+                rawtotal += rawvalues[i];
+            }
+
+            volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510; // 10bit, Vref=3.6V, 分圧比1000:510
+            mV = (uint16_t)(volt * 1000);
+            if (isCharging)
+            {
+                if (volt <= 3.78)
+                    value = 1;
+                else if (volt <= 4.02)
+                    value = 3;
+                else if (volt <= 4.25)
+                    value = (uint8_t)((volt - 4) * 140 / 5 + 0.5) * 5; // 4.25Vで35%になるよう5%単位
+                else
+                    value = 70; // ここからは定電圧領域になるので電圧じゃほとんどわからない
+            }
+            else
+            {
+                if (volt <= 3.5)
+                    value = 1;
+                else if (volt <= 3.62)
+                    value = 3;
+                else if (volt <= 3.8)
+                    value = (uint8_t)(((volt - 3.62) * 277.78 + 5) / 5 + 0.5) * 5; // 3.8Vで55%、3.62Vで5%
+                else if (volt <= 4.1)
+                    value = (uint8_t)(((volt - 3.8) * 150 + 55) / 5 + 0.5) * 5; // 4.1Vで100%、3.8Vで55%
+                else
+                    value = 100;
+            }
+            if (lastnotify != value)
+            {
+                lastnotify = value;
+                myBasNotyfy(value);
+            }
+            lastIsCharging = isCharging;
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    Serial.printf("battery mV %d notify %d", mV, value);
+    Serial.println();
 }
 void pin_and_button_attach(void)
 {
@@ -542,12 +626,12 @@ void loadmapfile(void)
     const char strtype[] = "TYPE";
     const char strdry[] = "dry";
     const char strnimh[] = "NiMH";
-    char positionstr[3] = {0};
+    const char strliion[] = "LiIon";
+
     char *readstr;
     String loadsettingstr;
-    int keystrlen;
+    // int keystrlen;
     char *padpos;
-    int padstrlen;
 
     if (file.open(inifilename, O_RDONLY))
     {
@@ -558,6 +642,7 @@ void loadmapfile(void)
 
             memclr(iniheader, sizeof(iniheader));
             memcpy(iniheader, "key", 3);
+            char positionstr[3] = {0};
             sprintf(positionstr, "%d", i + 1);
             loadsettingstr = String(positionstr);
             memcpy(&iniheader[strlen(iniheader)], positionstr, strlen(positionstr));
@@ -602,7 +687,8 @@ void loadmapfile(void)
             keycombi_report[i].keycode[0] = 0;
             free(readstr);
             readstr = inifileString(file, (char *)iniheader, (char *)key);
-            keystrlen = strlen(readstr);
+            int keystrlen = strlen(readstr);
+            int padstrlen;
             switch (keystrlen)
             {
             case 0:
@@ -663,7 +749,7 @@ void loadmapfile(void)
             Serial.println();
         }
         readstr = inifileString(file, (char *)strbatt, (char *)strtype);
-        keystrlen = strlen(readstr);
+        // keystrlen = strlen(readstr);
         if (readstr != NULL)
         {
             if (strstr(readstr, strdry) != NULL)
@@ -676,6 +762,12 @@ void loadmapfile(void)
                 currentBtype = eBT_NiMH;
                 Serial.println("battery type is NiMH battery");
             }
+            else if (strstr(readstr, strliion) != NULL)
+            {
+                currentBtype = eBT_liIon;
+                Serial.println("battery type is Litium-Ion battery");
+            }
+            //
         }
 
         free(readstr);
@@ -737,6 +829,10 @@ void blestart(void)
     Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
     Bluefruit.Advertising.start(
         0); // 0 = Don't stop advertising after n seconds
+}
+bool battery_isCharging()
+{
+    return digitalRead(PIN_INVCHG) == LOW;
 }
 // https://days-of-programming.blogspot.com/search/label/nRF52840
 

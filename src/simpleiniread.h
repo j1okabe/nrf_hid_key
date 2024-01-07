@@ -6,7 +6,7 @@
 char *inifileString(FatFile fp, char *header, char *detail, char *defaultData = NULL)
 {
     unsigned int position, length, index = 0;
-    char str[256], *output = NULL;
+    char str[512], *output = NULL;
     bool hit, headerHit = false;
     if (!fp)
     {
@@ -24,7 +24,7 @@ char *inifileString(FatFile fp, char *header, char *detail, char *defaultData = 
         str[index] = fp.read();
         if (!(str[index] == 0x0d || str[index] == 0x0a))
         {
-            if (index != 255)
+            if (index != 511)
                 index++;
             continue;
         }
