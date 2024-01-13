@@ -94,8 +94,16 @@ enum BatType
     eBT_NiMH,
     eBT_liIon
 };
+enum CurrentOperation
+{
+    eBatt,
+    eUSB
+};
 BatType currentBtype;
+CurrentOperation currentOperation;
 uint16_t lifened[2] = {900, 1000};
+const int my_pin_map[] = {D10, D9, D8, D7, D6, D5, D4, PIN_NFC2, D3, D2, PIN_NFC1, D1, D0};
+
 enum Mymodifier
 {
     myWIN,
@@ -120,20 +128,11 @@ enum mycombi
     MyKeyCombi_10,
     MyKeyCombi_11
 };
+OneButton *tactsw[KEYSNUM];
+int tactpos[KEYSNUM];
 // Setup buttons
-OneButton button0(D10, true);
-OneButton button1(D9, true);
-OneButton button2(D8, true);
-OneButton button3(D7, true);
-OneButton button4(D6, true);
-OneButton button5(D5, true);
-OneButton button6(D4, true);
-OneButton button7(PIN_NFC2, true);
-OneButton button8(D3, true);
-OneButton button9(D2, true);
 OneButton button20(PIN_NFC1, true);
-// OneButton button10(D1, true);
-// OneButton button11(D0, true);
+
 void loadmapfile(void);
 void MyKeyCombi_init(void)
 {
@@ -158,16 +157,16 @@ void MyKeyCombi_init(void)
     // keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_L;
     keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_D;
 }
-void myKeyboardReport(mycombi combi)
+void myKeyboardReport(mycombi *combi)
 {
     BLEConnection *connection = Bluefruit.Connection(0);
     if (connection && connection->connected() && connection->secured())
     {
-        blehid.keyboardReport(&keycombi_report[combi]);
+        blehid.keyboardReport(&keycombi_report[*combi]);
     }
     hasKeyPressed = true;
     Serial.print("button");
-    Serial.println((int)combi);
+    Serial.println((int)*combi);
     delay(5);
 }
 void myBasNotyfy(uint8_t value)
@@ -178,17 +177,8 @@ void myBasNotyfy(uint8_t value)
         blebas.notify(value);
     }
 }
-void click0(void) { myKeyboardReport(MyKeyCombi_0); }
-void click1(void) { myKeyboardReport(MyKeyCombi_1); }
-void click2(void) { myKeyboardReport(MyKeyCombi_2); }
-void click3(void) { myKeyboardReport(MyKeyCombi_3); }
-void click4(void) { myKeyboardReport(MyKeyCombi_4); }
-void click5(void) { myKeyboardReport(MyKeyCombi_5); }
-void click6(void) { myKeyboardReport(MyKeyCombi_6); }
-void click7(void) { myKeyboardReport(MyKeyCombi_7); }
-void click8(void) { myKeyboardReport(MyKeyCombi_8); }
-void click9(void) { myKeyboardReport(MyKeyCombi_9); }
-// void click10(void) { myKeyboardReport(MyKeyCombi_10); }
+
+void tactclick(void *position) { myKeyboardReport((mycombi *)position); }
 
 void longpress20(void)
 {
@@ -225,6 +215,8 @@ void setup()
     delay(100);
     if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
+
+        currentOperation = eUSB;
         Serial.begin(115200);
         delay(10);
 #ifdef DEBUG
@@ -243,6 +235,7 @@ void setup()
     else
     {
         // battery operate
+        currentOperation = eBatt;
 #ifdef DEBUG
         while (!Serial)
             delay(10); // wait for native usb
@@ -270,16 +263,11 @@ void loop()
 {
     // int32_t rawtotal;
     uint32_t ms = millis();
-    button0.tick();
-    button1.tick();
-    button2.tick();
-    button3.tick();
-    button4.tick();
-    button5.tick();
-    button6.tick();
-    button7.tick();
-    button8.tick();
-    button9.tick();
+    for (int i = 0; i < KEYSNUM; i++)
+    {
+        tactsw[i]->tick();
+    }
+
     button20.tick();
 
     // Only send KeyRelease if previously pressed to avoid sending
@@ -333,6 +321,16 @@ void loop()
         Serial.println();
         fs_changed = false;
     }
+    if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
+    {
+        if (currentOperation == eBatt)
+        {
+            // reboot
+            Bluefruit.disconnect(0);
+            NVIC_SystemReset();
+        }
+    }
+
     delay(50);
 }
 void measure_and_notify(void)
@@ -468,12 +466,16 @@ void pin_and_button_attach(void)
     pinMode(LED_RED, OUTPUT);
     pinMode(LED_GREEN, OUTPUT);
     pinMode(LED_BLUE, OUTPUT);
-    pinMode(D9, OUTPUT);
-    digitalWrite(D9, LOW); // for button6
     digitalWrite(LED_RED, HIGH);
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_BLUE, work_LED_status);
-
+    for (int i = 0; i < KEYSNUM; i++)
+    {
+        tactpos[i] = i;
+        tactsw[i] = new OneButton(my_pin_map[i], true);
+        tactsw[i]->attachClick(tactclick, &tactpos[i]);
+    }
+#if 0
     button0.attachClick(click0);
     button1.attachClick(click1);
     button2.attachClick(click2);
@@ -484,6 +486,7 @@ void pin_and_button_attach(void)
     button7.attachClick(click7);
     button8.attachClick(click8);
     button9.attachClick(click9);
+#endif
     // button10.attachClick(click10);
     button20.attachLongPressStart(longpress20);
 }
