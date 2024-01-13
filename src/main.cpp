@@ -20,8 +20,8 @@ SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
 .pio\libdeps\xiaoble_adafruit_nrf52\Adafruit SPIFlash\src\flash_devices.h line
 537 .max_clock_speed_mhz = 104, .quad_enable_bit_mask = 0x02,
 
-
 */
+
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};

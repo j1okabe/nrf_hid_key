@@ -4,7 +4,7 @@ include/README
 lib/README
 test
 .gitignore
-
+.DS_Store
 src/ff.c
 src/diskio.h
 src/ff.h
