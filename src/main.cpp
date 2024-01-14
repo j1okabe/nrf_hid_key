@@ -204,6 +204,7 @@ void usb_massstorage_start(void);
 void pin_and_button_attach(void);
 void measure_and_notify(void);
 bool battery_isCharging(void);
+void add_device_name_file(void);
 /* setup */
 void setup()
 {
@@ -256,6 +257,10 @@ void setup()
         pinMode(PIN_INVCHG, INPUT);
     }
     blestart();
+    if (currentOperation == eUSB)
+    {
+        add_device_name_file();
+    }
     lastMeasure = 0;
 }
 /* main loop */
@@ -376,7 +381,7 @@ void measure_and_notify(void)
             volt1000 = lifened[currentBtype];
         }
         value = (uint8_t)(map(volt1000, lifened[currentBtype], 1400, 1, 100));
-        if (lastnotify != value)
+        if (lastnotify != value && currentOperation == eBatt)
         {
             lastnotify = value;
 #if 1
@@ -617,7 +622,36 @@ void msc_flush_cb(void)
     digitalWrite(LED_GREEN, HIGH);
 #endif
 }
-
+void add_device_name_file(void)
+{
+    const char myfilename[] = "name.txt";
+    char lastletter[3] = {0};
+    char myaddressstr[64] = {0};
+    ble_gap_addr_t myaddres = Bluefruit.getAddr();
+    snprintf(lastletter, 3, "%2x", myaddres.addr[0]);
+    memcpy(mydevicename, basedevicename, strlen(basedevicename));
+    memcpy(&mydevicename[strlen(basedevicename)], lastletter, strlen(lastletter));
+    if (!root.open("/"))
+    {
+        Serial.println("open root failed");
+        return;
+    }
+    else
+    {
+        // fat format exits
+        if (file.exists(myfilename) == false)
+        {
+            file.open(myfilename, O_WRONLY | O_CREAT);
+            file.write(mydevicename);
+            file.write("\n");
+            snprintf(myaddressstr, sizeof(myaddressstr),
+                     "address %2x:%2x:%2x:%2x:%2x:%2x\n",
+                     myaddres.addr[0], myaddres.addr[1], myaddres.addr[2], myaddres.addr[3], myaddres.addr[4], myaddres.addr[5]);
+            file.write(myaddressstr);
+            file.close();
+        }
+    }
+}
 void loadmapfile(void)
 {
     char iniheader[8] = {0};

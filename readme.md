@@ -12,6 +12,9 @@ build enviroment : PlatformIo
 * connect USB to PC
 * format attatched disk with FAT
 * copy config.ini file to attatched disk
+* pairing Host
+
+  see device name in /name.txt
 
 # operation
 ![operation](img/operation.png)
