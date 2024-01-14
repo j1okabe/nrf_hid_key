@@ -13,6 +13,8 @@ build enviroment : PlatformIo
 * format attatched disk with FAT
 * copy config.ini file to attatched disk
 
+# operation
+![operation](img/operation.png)
 # pcb
 ![mouned pcb](img/mounted_pcb.jpg "mounted pcb")
 # sch
