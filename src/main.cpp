@@ -242,12 +242,15 @@ void setup()
             delay(10); // wait for native usb
 #endif
         Serial.println("VBUS NOT present");
+        flashTransport.begin();
+        flashTransport.runCommand(0xAB);
         if (flash.begin())
         {
+            fatfs.begin(&flash);
             loadmapfile();
         };
-
-        QSPIF_sleep();
+        flashTransport.runCommand(0xB9);
+        flashTransport.end();
     }
     if (currentBtype == eBT_liIon)
     {
