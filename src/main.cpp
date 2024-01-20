@@ -628,10 +628,10 @@ void msc_flush_cb(void)
 void add_device_name_file(void)
 {
     const char myfilename[] = "name.txt";
-    char lastletter[3] = {0};
+    char lastletter[5] = {0};
     char myaddressstr[64] = {0};
     ble_gap_addr_t myaddres = Bluefruit.getAddr();
-    snprintf(lastletter, 3, "%2x", myaddres.addr[0]);
+    snprintf(lastletter, 5, "%02x%02x", myaddres.addr[0], myaddres.addr[1]);
     memcpy(mydevicename, basedevicename, strlen(basedevicename));
     memcpy(&mydevicename[strlen(basedevicename)], lastletter, strlen(lastletter));
     if (!root.open("/"))
@@ -648,7 +648,7 @@ void add_device_name_file(void)
             file.write(mydevicename);
             file.write("\n");
             snprintf(myaddressstr, sizeof(myaddressstr),
-                     "address %2x:%2x:%2x:%2x:%2x:%2x\n",
+                     "address %02x:%02x:%02x:%02x:%02x:%02x\n",
                      myaddres.addr[0], myaddres.addr[1], myaddres.addr[2], myaddres.addr[3], myaddres.addr[4], myaddres.addr[5]);
             file.write(myaddressstr);
             file.close();
@@ -816,7 +816,7 @@ void loadmapfile(void)
 }
 void blestart(void)
 {
-    char lastletter[3] = {0};
+    char lastletter[5] = {0};
     Bluefruit.Periph.setConnIntervalMS(30, 120);
     Bluefruit.begin();
     Bluefruit.autoConnLed(0);
@@ -825,7 +825,7 @@ void blestart(void)
     bledis.setManufacturer("j1okabe");
     bledis.setModel("xiao ble");
     ble_gap_addr_t myaddres = Bluefruit.getAddr();
-    snprintf(lastletter, 3, "%2x", myaddres.addr[0]);
+    snprintf(lastletter, 5, "%02x%02x", myaddres.addr[0], myaddres.addr[1]);
     memcpy(mydevicename, basedevicename, strlen(basedevicename));
     memcpy(&mydevicename[strlen(basedevicename)], lastletter, strlen(lastletter));
     Bluefruit.setName(mydevicename);
