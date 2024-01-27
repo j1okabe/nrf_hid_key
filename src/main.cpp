@@ -1,19 +1,15 @@
 #include <Arduino.h>
 #include <bluefruit.h>
-// #include <Adafruit_LittleFS.h>
-// #include <InternalFileSystem.h>
 #include "Adafruit_SPIFlash.h"
 #include "Adafruit_TinyUSB.h"
 #include "SPI.h"
 #include "SdFat.h"
 #include "simpleiniread.h"
 #include <OneButton.h>
-// #define DISK_BLOCK_NUM 16
-// #define DISK_BLOCK_SIZE 512
-// #define RAMDISK
-// #include "ramdisk.h"
+
 // #define DEBUG
 /*
+patch to work P25Q16H.
 .pio\libdeps\xiaoble_adafruit_nrf52\Adafruit
 SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
 
@@ -63,7 +59,7 @@ FatFile file;
 Adafruit_USBD_MSC usb_msc;
 
 // Set to true when PC write to flash
-bool fs_changed;
+bool fs_changed = false;
 uint32_t lastflashed;
 #define BAT_AVERAGE_COUNT 16
 #define BAT_AVERAGE_MASK 0x000F
@@ -84,7 +80,6 @@ uint8_t lastnotify;
 uint16_t rawvalues[BAT_AVERAGE_COUNT] = {0};
 bool lastIsCharging = false;
 uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
-//  keycode[0] = conv_table[chr][1];
 
 hid_keyboard_report_t keycombi_report[KEYSNUM];
 int work_LED_status = HIGH;
@@ -483,19 +478,6 @@ void pin_and_button_attach(void)
         tactsw[i] = new OneButton(my_pin_map[i], true);
         tactsw[i]->attachClick(tactclick, &tactpos[i]);
     }
-#if 0
-    button0.attachClick(click0);
-    button1.attachClick(click1);
-    button2.attachClick(click2);
-    button3.attachClick(click3);
-    button4.attachClick(click4);
-    button5.attachClick(click5);
-    button6.attachClick(click6);
-    button7.attachClick(click7);
-    button8.attachClick(click8);
-    button9.attachClick(click9);
-#endif
-    // button10.attachClick(click10);
     button20.attachLongPressStart(longpress20);
 }
 void connect_callback(uint16_t conn_handle)
@@ -644,7 +626,7 @@ void add_device_name_file(void)
         // fat format exits
         if (file.exists(myfilename) == false)
         {
-            file.open(myfilename, O_WRONLY | O_CREAT);
+            file.open(myfilename, O_WRONLY | O_CREAT | O_EXCL);
             file.write(mydevicename);
             file.write("\n");
             snprintf(myaddressstr, sizeof(myaddressstr),
