@@ -8,16 +8,7 @@
 #include <OneButton.h>
 
 // #define DEBUG
-/*
-patch to work P25Q16H.
-.pio\libdeps\xiaoble_adafruit_nrf52\Adafruit
-SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
-
-.pio\libdeps\xiaoble_adafruit_nrf52\Adafruit SPIFlash\src\flash_devices.h line
-537 .max_clock_speed_mhz = 104, .quad_enable_bit_mask = 0x02,
-
-*/
-
+const char Ver_str[] = "100";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
@@ -69,9 +60,9 @@ uint32_t lastflashed;
     (0.439453126F) // 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
 #define PIN_INVCHG 23
 #define PIN_HICHG 22
-BLEDis bledis;
-BLEHidAdafruit blehid;
-BLEBas blebas;
+BLEDis bledis;         // device information service
+BLEHidAdafruit blehid; // Human Interface Device service
+BLEBas blebas;         // battery Service
 bool hasKeyPressed = false;
 uint32_t lastMeasure;
 int8_t vindex;
@@ -97,7 +88,9 @@ enum CurrentOperation
 BatType currentBtype;
 CurrentOperation currentOperation;
 uint16_t lifened[2] = {900, 1000};
-const int my_pin_map[] = {D10, D9, D8, D7, D6, D5, D4, PIN_NFC2, D3, D2, PIN_NFC1, D1, D0};
+const int my_pin_map[] = {D10, D9, D8, D7,
+                          D6, D5, D4, PIN_NFC2,
+                          D3, D2, D1, D0};
 
 enum Mymodifier
 {
@@ -129,6 +122,8 @@ int tactpos[KEYSNUM];
 OneButton button20(PIN_NFC1, true);
 
 void loadmapfile(void);
+
+/// @brief init report data
 void MyKeyCombi_init(void)
 {
     varclr(&keycombi_report);
@@ -152,8 +147,10 @@ void MyKeyCombi_init(void)
     // keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_L;
     keycombi_report[MyKeyCombi_5].keycode[0] = HID_KEY_D;
 }
+
 void myKeyboardReport(mycombi *combi)
 {
+
     BLEConnection *connection = Bluefruit.Connection(0);
     if (connection && connection->connected() && connection->secured())
     {
@@ -182,12 +179,6 @@ void longpress20(void)
     delay(5);
     // digitalWrite(LED_RED, HIGH);
 }
-void QSPIF_sleep(void)
-{
-    flashTransport.begin();
-    flashTransport.runCommand(0xB9);
-    flashTransport.end();
-}
 
 void connect_callback(uint16_t conn_handle);
 void disconnect_callback(uint16_t conn_handle, uint8_t reason);
@@ -200,6 +191,7 @@ void pin_and_button_attach(void);
 void measure_and_notify(void);
 bool battery_isCharging(void);
 void add_device_name_file(void);
+
 /* setup */
 void setup()
 {
@@ -244,7 +236,7 @@ void setup()
             fatfs.begin(&flash);
             loadmapfile();
         };
-        flashTransport.runCommand(0xB9);
+        flashTransport.runCommand(0xB9); // sleep nor flash
         flashTransport.end();
     }
     if (currentBtype == eBT_liIon)
@@ -338,7 +330,7 @@ void loop()
 }
 void measure_and_notify(void)
 {
-    uint16_t mV = 0;
+    float mV = 0.0;
     uint16_t volt1000;
     uint8_t value = 0;
     uint16_t rawtotal = 0;
@@ -369,7 +361,7 @@ void measure_and_notify(void)
             rawtotal += rawvalues[i];
         }
         mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
-        volt1000 = mV;
+        volt1000 = (uint16_t)mV;
         if (volt1000 > 1400)
         {
             volt1000 = 1400;
@@ -383,7 +375,7 @@ void measure_and_notify(void)
         {
             lastnotify = value;
 #if 1
-            if (mV <= lifened[currentBtype])
+            if (volt1000 <= lifened[currentBtype])
             {
                 myBasNotyfy(1);
                 if (currentBtype == eBT_NiMH)
@@ -423,7 +415,7 @@ void measure_and_notify(void)
             }
 
             volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510; // 10bit, Vref=3.6V, 分圧比1000:510
-            mV = (uint16_t)(volt * 1000);
+            mV = volt * 1000;
             if (isCharging)
             {
                 if (volt <= 3.78)
@@ -511,6 +503,7 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 void usb_massstorage_start(void)
 {
     flashTransport.begin();
+    // wake up nor flash
     flashTransport.runCommand(0xAB);
 
     if (flash.begin() == false)
@@ -633,6 +626,9 @@ void add_device_name_file(void)
                      "address %02x:%02x:%02x:%02x:%02x:%02x\n",
                      myaddres.addr[0], myaddres.addr[1], myaddres.addr[2], myaddres.addr[3], myaddres.addr[4], myaddres.addr[5]);
             file.write(myaddressstr);
+            file.write("\nVersion:");
+            file.write(Ver_str);
+            file.write("\n");
             file.close();
         }
     }
@@ -863,3 +859,13 @@ bool battery_isCharging()
 
 // XIAO nRF52840 のVBUS判定
 // https://lipoyang.hatenablog.com/entry/2023/01/01/102737
+
+/*
+patch to work P25Q16H.
+.pio\libdeps\xiaoble_adafruit_nrf52\Adafruit
+SPIFlash\src\Adafruit_SPIFlashBase.cpp line 111 add  P25Q16H
+
+.pio\libdeps\xiaoble_adafruit_nrf52\Adafruit SPIFlash\src\flash_devices.h line
+537 .max_clock_speed_mhz = 104, .quad_enable_bit_mask = 0x02,
+
+*/

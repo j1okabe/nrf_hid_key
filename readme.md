@@ -35,11 +35,17 @@ build enviroment : PlatformIo
 | SW113    | TVDT18-050CB-T | https://akizukidenshi.com/catalog/g/g108078/                             | 
 | holder   | BH-411-4A      | https://akizukidenshi.com/catalog/g/g103046/                             | 
 
+---
+---
 
+### for create uf2 file
+use uf2conv.
+
+https://github.com/microsoft/uf2/tree/master/utils
+> python uf2conv.py firmware.hex -c -f 0xADA52840
 ---
 * junichiro okabe  KYOTO, JAPAN 
 
-* E-mail j1okabe＠gmail.com
 
 [![CC BY-NC-SA 4.0][cc-by-nc-sa-shield]][cc-by-nc-sa]
 
