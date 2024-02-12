@@ -38,6 +38,8 @@ Adafruit_FlashTransport_SPI flashTransport(EXTERNAL_FLASH_USE_CS,
 #endif
 #endif
 
+#define COMMAND_WAKEUP (0xAB)
+#define COMMAND_SLLEP (0xB9)
 // Adafruit_SPIFlash flash(&flashTransport);
 Adafruit_SPIFlash flash(&flashTransport);
 // file system object from SdFat
@@ -52,14 +54,24 @@ Adafruit_USBD_MSC usb_msc;
 // Set to true when PC write to flash
 bool fs_changed = false;
 uint32_t lastflashed;
+#define FLASH_MONITOR_INTERVAL (1000)
+#define BAT_MEASURE_INTERVAL (3000)
 #define BAT_AVERAGE_COUNT 16
 #define BAT_AVERAGE_MASK 0x000F
-// #define VBAT_MV_PER_LSB   (0.73242188F)   // 3.0V ADC range and 12-bit ADC
-// resolution = 3000mV/4096
+#define BAT_UPPER (1400)
+// 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
 #define VBAT_MV_PER_LSB \
-    (0.439453126F) // 1.8V ADC range and 12-bit ADC resolution = 1800mV/4096
+    (0.439453126F)
 #define PIN_INVCHG 23
 #define PIN_HICHG 22
+#define LI_CHG_LV1 (3.78)
+#define LI_CHG_LV2 (4.02)
+#define LI_CHG_LV3 (4.25)
+#define LI_LV1 (3.50)
+#define LI_LV2 (3.62)
+#define LI_LV3 (3.80)
+#define LI_LV4 (4.10)
+
 BLEDis bledis;         // device information service
 BLEHidAdafruit blehid; // Human Interface Device service
 BLEBas blebas;         // battery Service
@@ -187,7 +199,7 @@ int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize);
 void msc_flush_cb(void);
 void blestart(void);
 void usb_massstorage_start(void);
-void pin_and_button_attach(void);
+void pin_init_and_button_attach(void);
 void measure_and_notify(void);
 bool battery_isCharging(void);
 void add_device_name_file(void);
@@ -198,7 +210,7 @@ void setup()
     // Enable DC-DC converter
     NRF_POWER->DCDCEN = 1;
     MyKeyCombi_init();
-    pin_and_button_attach();
+    pin_init_and_button_attach();
 
     delay(100);
     if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
@@ -230,13 +242,13 @@ void setup()
 #endif
         Serial.println("VBUS NOT present");
         flashTransport.begin();
-        flashTransport.runCommand(0xAB);
+        flashTransport.runCommand(COMMAND_WAKEUP);
         if (flash.begin())
         {
             fatfs.begin(&flash);
             loadmapfile();
         };
-        flashTransport.runCommand(0xB9); // sleep nor flash
+        flashTransport.runCommand(COMMAND_SLLEP); // sleep nor flash
         flashTransport.end();
     }
     if (currentBtype == eBT_liIon)
@@ -256,8 +268,9 @@ void setup()
 /* main loop */
 void loop()
 {
-    // int32_t rawtotal;
-    uint32_t ms = millis();
+    uint32_t ms;
+
+    ms = millis();
     for (int i = 0; i < KEYSNUM; i++)
     {
         tactsw[i]->tick();
@@ -275,45 +288,15 @@ void loop()
         // Delay a bit after a report
         delay(5);
     }
-    if (ms - lastMeasure > 3000)
+    if (ms - lastMeasure > BAT_MEASURE_INTERVAL)
     {
         lastMeasure = ms;
         measure_and_notify();
     }
-    uint32_t ms2 = millis();
-    if (fs_changed && ((ms2 - lastflashed) > 1000))
+    ms = millis();
+    if (fs_changed && ((ms - lastflashed) > FLASH_MONITOR_INTERVAL))
     {
-#if 0
-        if (!root.open("/"))
-        {
-            Serial.println("open root failed");
-            return;
-        }
-
-        Serial.println("Flash contents:");
-
-        // Open next file in root.
-        // Warning, openNext starts at the current directory position
-        // so a rewind of the directory may be required.
-        while (file.openNext(&root, O_RDONLY))
-        {
-            file.printFileSize(&Serial);
-            Serial.write(' ');
-            file.printName(&Serial);
-            if (file.isDir())
-            {
-                // Indicate a directory.
-                Serial.write('/');
-            }
-            Serial.println();
-            file.close();
-        }
-
-        root.close();
-#else
         loadmapfile();
-#endif
-        Serial.println();
         fs_changed = false;
     }
     if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
@@ -328,10 +311,12 @@ void loop()
 
     delay(50);
 }
+
+/* bat measure and notify batt state */
 void measure_and_notify(void)
 {
     float mV = 0.0;
-    uint16_t volt1000;
+    uint16_t volt1000 = 0;
     uint8_t value = 0;
     uint16_t rawtotal = 0;
     bool isCharging;
@@ -360,17 +345,17 @@ void measure_and_notify(void)
         {
             rawtotal += rawvalues[i];
         }
-        mV = (double)rawtotal / count * VBAT_MV_PER_LSB;
+        mV = (float)rawtotal / count * VBAT_MV_PER_LSB;
         volt1000 = (uint16_t)mV;
-        if (volt1000 > 1400)
+        if (volt1000 > BAT_UPPER)
         {
-            volt1000 = 1400;
+            volt1000 = BAT_UPPER;
         }
         if (volt1000 < lifened[currentBtype])
         {
             volt1000 = lifened[currentBtype];
         }
-        value = (uint8_t)(map(volt1000, lifened[currentBtype], 1400, 1, 100));
+        value = (uint8_t)(map(volt1000, lifened[currentBtype], BAT_UPPER, 1, 100));
         if (lastnotify != value && currentOperation == eBatt)
         {
             lastnotify = value;
@@ -415,28 +400,28 @@ void measure_and_notify(void)
             }
 
             volt = (double)rawtotal / count / 1024 * 3.6 / 510 * 1510; // 10bit, Vref=3.6V, 分圧比1000:510
-            mV = volt * 1000;
+            volt1000 = (uint16_t)(volt * 1000);
             if (isCharging)
             {
-                if (volt <= 3.78)
+                if (volt <= LI_CHG_LV1)
                     value = 1;
-                else if (volt <= 4.02)
+                else if (volt <= LI_CHG_LV2)
                     value = 3;
-                else if (volt <= 4.25)
+                else if (volt <= LI_CHG_LV3)
                     value = (uint8_t)((volt - 4) * 140 / 5 + 0.5) * 5; // 4.25Vで35%になるよう5%単位
                 else
                     value = 70; // ここからは定電圧領域になるので電圧じゃほとんどわからない
             }
             else
             {
-                if (volt <= 3.5)
+                if (volt <= LI_LV1)
                     value = 1;
-                else if (volt <= 3.62)
+                else if (volt <= LI_LV2)
                     value = 3;
-                else if (volt <= 3.8)
-                    value = (uint8_t)(((volt - 3.62) * 277.78 + 5) / 5 + 0.5) * 5; // 3.8Vで55%、3.62Vで5%
-                else if (volt <= 4.1)
-                    value = (uint8_t)(((volt - 3.8) * 150 + 55) / 5 + 0.5) * 5; // 4.1Vで100%、3.8Vで55%
+                else if (volt <= LI_LV3)
+                    value = (uint8_t)(((volt - LI_LV2) * 277.78 + 5) / 5 + 0.5) * 5; // 3.8Vで55%、3.62Vで5%
+                else if (volt <= LI_LV4)
+                    value = (uint8_t)(((volt - LI_LV3) * 150 + 55) / 5 + 0.5) * 5; // 4.1Vで100%、3.8Vで55%
                 else
                     value = 100;
             }
@@ -453,10 +438,10 @@ void measure_and_notify(void)
         }
     }
 
-    Serial.printf("battery mV %d notify %d", mV, value);
+    Serial.printf("battery mV %d notify %d", volt1000, value);
     Serial.println();
 }
-void pin_and_button_attach(void)
+void pin_init_and_button_attach(void)
 {
     pinMode(LED_RED, OUTPUT);
     pinMode(LED_GREEN, OUTPUT);
@@ -504,7 +489,7 @@ void usb_massstorage_start(void)
 {
     flashTransport.begin();
     // wake up nor flash
-    flashTransport.runCommand(0xAB);
+    flashTransport.runCommand(COMMAND_WAKEUP);
 
     if (flash.begin() == false)
     {
@@ -624,7 +609,8 @@ void add_device_name_file(void)
             file.write("\n");
             snprintf(myaddressstr, sizeof(myaddressstr),
                      "address %02x:%02x:%02x:%02x:%02x:%02x\n",
-                     myaddres.addr[0], myaddres.addr[1], myaddres.addr[2], myaddres.addr[3], myaddres.addr[4], myaddres.addr[5]);
+                     myaddres.addr[0], myaddres.addr[1], myaddres.addr[2],
+                     myaddres.addr[3], myaddres.addr[4], myaddres.addr[5]);
             file.write(myaddressstr);
             file.write("\nVersion:");
             file.write(Ver_str);
@@ -715,7 +701,7 @@ void loadmapfile(void)
             case 1:
                 if (readstr != NULL && readstr[0] < 128)
                 {
-                    int tnum = readstr[0];
+                    uint8_t tnum = readstr[0];
                     keycombi_report[i].keycode[0] = conv_table[tnum][1];
                     if (conv_table[tnum][0] == 1)
                     {
@@ -852,6 +838,8 @@ bool battery_isCharging()
 {
     return digitalRead(PIN_INVCHG) == LOW;
 }
+
+/* Referenced Articles */
 // https://days-of-programming.blogspot.com/search/label/nRF52840
 
 // XIAO BLEをArduino開発するときの2種のボードライブラリの違い
