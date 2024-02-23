@@ -13,6 +13,8 @@ const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
 #define KEYSNUM 10
+#define KEYCLICKTIME (200)
+
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
 
@@ -454,6 +456,7 @@ void pin_init_and_button_attach(void)
         tactpos[i] = i;
         tactsw[i] = new OneButton(my_pin_map[i], true);
         tactsw[i]->attachClick(tactclick, &tactpos[i]);
+        tactsw[i]->setClickMs(KEYCLICKTIME);
     }
     button20.attachLongPressStart(longpress20);
 }
