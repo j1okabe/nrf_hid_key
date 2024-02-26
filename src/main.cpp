@@ -101,7 +101,7 @@ enum CurrentOperation
 };
 BatType currentBtype;
 CurrentOperation currentOperation;
-uint16_t lifened[2] = {900, 1000};
+uint16_t life_end[2] = {900, 1000};
 const int my_pin_map[] = {D10, D9, D8, D7,
                           D6, D5, D4, PIN_NFC2,
                           D3, D2, D1, D0};
@@ -353,16 +353,16 @@ void measure_and_notify(void)
         {
             volt1000 = BAT_UPPER;
         }
-        if (volt1000 < lifened[currentBtype])
+        if (volt1000 < life_end[currentBtype])
         {
-            volt1000 = lifened[currentBtype];
+            volt1000 = life_end[currentBtype];
         }
-        value = (uint8_t)(map(volt1000, lifened[currentBtype], BAT_UPPER, 1, 100));
+        value = (uint8_t)(map(volt1000, life_end[currentBtype], BAT_UPPER, 1, 100));
         if (lastnotify != value && currentOperation == eBatt)
         {
             lastnotify = value;
 #if 1
-            if (volt1000 <= lifened[currentBtype])
+            if (volt1000 <= life_end[currentBtype])
             {
                 myBasNotyfy(1);
                 if (currentBtype == eBT_NiMH)
