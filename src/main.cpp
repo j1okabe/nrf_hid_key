@@ -8,12 +8,12 @@
 #include <OneButton.h>
 
 // #define DEBUG
-const char Ver_str[] = "100";
+const char Ver_str[] = "101";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
 #define KEYSNUM 10
-#define KEYCLICKTIME (200)
+#define KEYCLICKTIME (100)
 
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
