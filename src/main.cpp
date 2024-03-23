@@ -8,7 +8,7 @@
 #include <OneButton.h>
 
 // #define DEBUG
-const char Ver_str[] = "101";
+const char Ver_str[] = "103";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
@@ -87,7 +87,7 @@ bool lastIsCharging = false;
 uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
 
 hid_keyboard_report_t keycombi_report[KEYSNUM];
-int work_LED_status = HIGH;
+// int work_LED_status = HIGH;
 enum BatType
 {
     eBT_dry,
@@ -184,7 +184,14 @@ void myBasNotyfy(uint8_t value)
     }
 }
 
-void tactclick(void *position) { myKeyboardReport((mycombi *)position); }
+void tactclick(void *position)
+{
+    if (currentOperation == eUSB)
+    {
+        digitalWrite(LED_BLUE, LOW);
+    }
+    myKeyboardReport((mycombi *)position);
+}
 
 void longpress20(void)
 {
@@ -289,6 +296,10 @@ void loop()
 
         // Delay a bit after a report
         delay(5);
+        if (currentOperation == eUSB)
+        {
+            digitalWrite(LED_BLUE, HIGH);
+        }
     }
     if (ms - lastMeasure > BAT_MEASURE_INTERVAL)
     {
@@ -450,7 +461,7 @@ void pin_init_and_button_attach(void)
     pinMode(LED_BLUE, OUTPUT);
     digitalWrite(LED_RED, HIGH);
     digitalWrite(LED_GREEN, HIGH);
-    digitalWrite(LED_BLUE, work_LED_status);
+    digitalWrite(LED_BLUE, HIGH);
     for (int i = 0; i < KEYSNUM; i++)
     {
         tactpos[i] = i;
