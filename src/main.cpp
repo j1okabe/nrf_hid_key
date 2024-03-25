@@ -8,12 +8,12 @@
 #include <OneButton.h>
 
 // #define DEBUG
-const char Ver_str[] = "103";
+const char Ver_str[] = "104";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
 #define KEYSNUM 10
-#define KEYCLICKTIME (100)
+#define KEYCLICKTIME (50)
 
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
@@ -292,10 +292,15 @@ void loop()
     if (hasKeyPressed)
     {
         hasKeyPressed = false;
-        blehid.keyRelease();
 
-        // Delay a bit after a report
-        delay(5);
+        BLEConnection *connection = Bluefruit.Connection(0);
+        if (connection && connection->connected() && connection->secured())
+        {
+            blehid.keyRelease();
+            // Delay a bit after a report
+            delay(5);
+        }
+
         if (currentOperation == eUSB)
         {
             digitalWrite(LED_BLUE, HIGH);
@@ -339,7 +344,7 @@ void measure_and_notify(void)
     switch (currentBtype)
     {
     case eBT_dry:
-    /* FALLTHROUGH */
+        /* FALLTHROUGH */
     case eBT_NiMH:
         analogReference(AR_INTERNAL_1_8);
         // Set the resolution to 12-bit (0..4095)
@@ -799,7 +804,7 @@ void blestart(void)
     Bluefruit.begin();
     Bluefruit.autoConnLed(0);
     Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
-                             // Configure and Start Device Information Service
+    // Configure and Start Device Information Service
     bledis.setManufacturer("j1okabe");
     bledis.setModel("xiao ble");
     ble_gap_addr_t myaddres = Bluefruit.getAddr();
