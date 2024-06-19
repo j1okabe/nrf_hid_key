@@ -8,7 +8,7 @@
 #include <OneButton.h>
 
 // #define DEBUG
-const char Ver_str[] = "104";
+const char Ver_str[] = "105";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
@@ -323,6 +323,7 @@ void loop()
         {
             // reboot
             Bluefruit.disconnect(0);
+            delay(100);
             NVIC_SystemReset();
         }
     }
@@ -473,6 +474,7 @@ void pin_init_and_button_attach(void)
         tactsw[i] = new OneButton(my_pin_map[i], true);
         tactsw[i]->attachClick(tactclick, &tactpos[i]);
         tactsw[i]->setClickMs(KEYCLICKTIME);
+        tactsw[i]->setIdleMs(100);
     }
     button20.attachLongPressStart(longpress20);
 }
@@ -644,6 +646,7 @@ void loadmapfile(void)
     const char modifier[] = "modifier";
     const char *modifierstr[] = {"WIN", "CMD", "CTRL", "ALT", "OPT"};
     const char key[] = "key";
+    const char ar[] = "AR";
     const char pad[] = "PAD";
     const char strbatt[] = "BATT";
     const char strtype[] = "TYPE";
@@ -728,6 +731,36 @@ void loadmapfile(void)
                         loadsettingstr.concat("SHIFT ");
                     }
                     loadsettingstr.concat(readstr[0]);
+                }
+                else
+                {
+                    loadsettingstr.concat("NO_KEY ");
+                }
+                break;
+            case 3:
+                padpos = strstr(readstr, ar);
+                padstrlen = strlen(padpos);
+                if (padpos != NULL && padstrlen == 3)
+                {
+                    switch (padpos[2])
+                    {
+                    case 'U':
+                        keycombi_report[i].keycode[0] = HID_KEY_ARROW_UP;
+                        break;
+                    case 'D':
+                        keycombi_report[i].keycode[0] = HID_KEY_ARROW_DOWN;
+                        break;
+                    case 'L':
+                        keycombi_report[i].keycode[0] = HID_KEY_ARROW_LEFT;
+                        break;
+                    case 'R':
+                        keycombi_report[i].keycode[0] = HID_KEY_ARROW_RIGHT;
+                        break;
+                    default:
+                        keycombi_report[i].keycode[0] = 0;
+                        break;
+                    }
+                    loadsettingstr.concat(readstr);
                 }
                 else
                 {
