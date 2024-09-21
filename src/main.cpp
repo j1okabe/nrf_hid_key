@@ -8,7 +8,7 @@
 #include <bluefruit.h>
 
 // #define DEBUG
-const char Ver_str[] = "106";
+const char Ver_str[] = "107";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
@@ -107,8 +107,8 @@ enum CurrentOperation
 BatType currentBtype;
 CurrentOperation currentOperation;
 uint16_t life_end[2] = {900, 1000};
-const int my_pin_map[] = {D10, D9,       D8, D7, D6, D5,
-                          D4,  PIN_NFC2, D3, D2, D1, D0};
+const int my_pin_map[] = {D10, D9, D8, D7, D6, D5,
+                          D4, PIN_NFC2, D3, D2, D1, D0};
 
 enum Mymodifier
 {
@@ -170,7 +170,7 @@ void myKeyboardReport(mycombi *combi)
 {
 
     BLEConnection *connection = Bluefruit.Connection(0);
-    if(connection && connection->connected() && connection->secured())
+    if (connection && connection->connected() && connection->secured())
     {
         blehid.keyboardReport(&keycombi_report[*combi]);
     }
@@ -182,7 +182,7 @@ void myKeyboardReport(mycombi *combi)
 void myBasNotyfy(uint8_t value)
 {
     BLEConnection *connection = Bluefruit.Connection(0);
-    if(connection && connection->connected() && connection->secured())
+    if (connection && connection->connected() && connection->secured())
     {
         blebas.notify(value);
     }
@@ -190,7 +190,7 @@ void myBasNotyfy(uint8_t value)
 
 void tactclick(void *position)
 {
-    if(currentOperation == eUSB)
+    if (currentOperation == eUSB)
     {
         digitalWrite(LED_BLUE, LOW);
     }
@@ -226,14 +226,14 @@ void setup()
     pin_init_and_button_attach();
 
     delay(100);
-    if(NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
+    if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
 
         currentOperation = eUSB;
         Serial.begin(115200);
         delay(10);
 #ifdef DEBUG
-        while(!Serial)
+        while (!Serial)
             delay(10); // wait for native usb
 #endif
         // VBUS present
@@ -250,13 +250,13 @@ void setup()
         // battery operate
         currentOperation = eBatt;
 #ifdef DEBUG
-        while(!Serial)
+        while (!Serial)
             delay(10); // wait for native usb
 #endif
-        Serial.println("VBUS NOT present");
+        // Serial.println("VBUS NOT present");
         flashTransport.begin();
         flashTransport.runCommand(COMMAND_WAKEUP);
-        if(flash.begin())
+        if (flash.begin())
         {
             fatfs.begin(&flash);
             loadmapfile();
@@ -264,7 +264,7 @@ void setup()
         flashTransport.runCommand(COMMAND_SLLEP); // sleep nor flash
         flashTransport.end();
     }
-    if(currentBtype == eBT_liIon)
+    if (currentBtype == eBT_liIon)
     {
         // High speed charging (100mA)
         pinMode(PIN_HICHG, OUTPUT);
@@ -272,7 +272,7 @@ void setup()
         pinMode(PIN_INVCHG, INPUT);
     }
     blestart();
-    if(currentOperation == eUSB)
+    if (currentOperation == eUSB)
     {
         add_device_name_file();
     }
@@ -283,7 +283,7 @@ void loop()
 {
     uint32_t ms;
     ms = millis();
-    for(int i = 0; i < KEYSNUM; i++)
+    for (int i = 0; i < KEYSNUM; i++)
     {
         tactsw[i]->tick();
     }
@@ -292,46 +292,47 @@ void loop()
 
     // Only send KeyRelease if previously pressed to avoid sending
     // multiple keyRelease reports (that consume memory and bandwidth)
-    if(hasKeyPressed)
+    if (hasKeyPressed)
     {
         hasKeyPressed = false;
 
         BLEConnection *connection = Bluefruit.Connection(0);
-        if(connection && connection->connected() && connection->secured())
+        if (connection && connection->connected() && connection->secured())
         {
             blehid.keyRelease();
             // Delay a bit after a report
             delay(5);
         }
 
-        if(currentOperation == eUSB)
+        if (currentOperation == eUSB)
         {
             digitalWrite(LED_BLUE, HIGH);
         }
     }
-    if(ms - lastMeasure > BAT_MEASURE_INTERVAL)
+    if (ms - lastMeasure > BAT_MEASURE_INTERVAL)
     {
         lastMeasure = ms;
         measure_and_notify();
     }
     ms = millis();
-    if(fs_changed && ((ms - lastflashed) > FLASH_MONITOR_INTERVAL))
+    if (fs_changed && ((ms - lastflashed) > FLASH_MONITOR_INTERVAL))
     {
         loadmapfile();
         fs_changed = false;
     }
-    if(NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
+    if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
-        if(currentOperation == eBatt)
+        if (currentOperation == eBatt)
         {
             // reboot
             Bluefruit.disconnect(0);
             delay(100);
             NVIC_SystemReset();
         }
+        handleSerial();
     }
-    handleSerial();
-    if(receiving)
+
+    if (receiving)
     {
         delay(1);
     }
@@ -342,7 +343,7 @@ void loop()
 }
 void flushBufferToFile()
 {
-    if(bufferIndex > 0)
+    if (bufferIndex > 0)
     {
         dataFile.write(buffer, bufferIndex);
         bufferIndex = 0;
@@ -350,15 +351,15 @@ void flushBufferToFile()
 }
 void handleSerial()
 {
-    while(Serial.available())
+    while (Serial.available())
     {
 
         lastRecieve = millis();
         char receivedChar = Serial.read();
 
-        if(receivedChar == 0x05)
+        if (receivedChar == 0x05)
         { // ENQ
-            if(dataFile.open(inifilename, O_WRITE | O_CREAT | O_TRUNC))
+            if (dataFile.open(inifilename, O_WRITE | O_CREAT | O_TRUNC))
             {
                 Serial.write(0x06); // ACK
                 receiving = true;
@@ -371,9 +372,9 @@ void handleSerial()
             }
         }
 
-        else if(receivedChar == 0x04)
+        else if (receivedChar == 0x04)
         { // EOT
-            if(receiving)
+            if (receiving)
             {
                 flushBufferToFile();
                 dataFile.close();
@@ -387,18 +388,18 @@ void handleSerial()
             }
         }
 
-        else if(receiving)
+        else if (receiving)
         {
             buffer[bufferIndex++] = receivedChar;
-            if(bufferIndex >= R_BUFFERSIZE)
+            if (bufferIndex >= R_BUFFERSIZE)
             {
                 flushBufferToFile();
             }
         }
     }
-    if(receiving)
+    if (receiving)
     {
-        if((lastRecieve + 2000) < millis())
+        if ((lastRecieve + 2000) < millis())
         {
             receiving = false;
             dataFile.close();
@@ -417,7 +418,7 @@ void measure_and_notify(void)
     double volt;
     Bluefruit.autoConnLed(false);
     digitalWrite(LED_RED, HIGH);
-    switch(currentBtype)
+    switch (currentBtype)
     {
     case eBT_dry:
         /* FALLTHROUGH */
@@ -435,30 +436,30 @@ void measure_and_notify(void)
         vindex = (vindex + 1) & BAT_AVERAGE_MASK;
         count = min(count + 1, BAT_AVERAGE_COUNT);
         rawtotal = 0;
-        for(int i = 0; i < count; i++)
+        for (int i = 0; i < count; i++)
         {
             rawtotal += rawvalues[i];
         }
         mV = (float)rawtotal / count * VBAT_MV_PER_LSB;
         volt1000 = (uint16_t)mV;
-        if(volt1000 > BAT_UPPER)
+        if (volt1000 > BAT_UPPER)
         {
             volt1000 = BAT_UPPER;
         }
-        if(volt1000 < life_end[currentBtype])
+        if (volt1000 < life_end[currentBtype])
         {
             volt1000 = life_end[currentBtype];
         }
         value =
             (uint8_t)(map(volt1000, life_end[currentBtype], BAT_UPPER, 1, 100));
-        if(lastnotify != value && currentOperation == eBatt)
+        if (lastnotify != value && currentOperation == eBatt)
         {
             lastnotify = value;
 #if 1
-            if(volt1000 <= life_end[currentBtype])
+            if (volt1000 <= life_end[currentBtype])
             {
                 myBasNotyfy(1);
-                if(currentBtype == eBT_NiMH)
+                if (currentBtype == eBT_NiMH)
                 {
                     // system off
                     sd_power_system_off();
@@ -473,7 +474,7 @@ void measure_and_notify(void)
 
         case eBT_liIon:
             isCharging = battery_isCharging();
-            if(lastIsCharging != isCharging)
+            if (lastIsCharging != isCharging)
             { // 充電状態が変わったらリセット
                 vindex = 0;
                 count = 0;
@@ -489,7 +490,7 @@ void measure_and_notify(void)
             vindex = (vindex + 1) & BAT_AVERAGE_MASK;
             count = min(count + 1, BAT_AVERAGE_COUNT);
             rawtotal = 0;
-            for(int i = 0; i < count; i++)
+            for (int i = 0; i < count; i++)
             {
                 rawtotal += rawvalues[i];
             }
@@ -497,13 +498,13 @@ void measure_and_notify(void)
             volt = (double)rawtotal / count / 1024 * 3.6 / 510 *
                    1510; // 10bit, Vref=3.6V, 分圧比1000:510
             volt1000 = (uint16_t)(volt * 1000);
-            if(isCharging)
+            if (isCharging)
             {
-                if(volt <= LI_CHG_LV1)
+                if (volt <= LI_CHG_LV1)
                     value = 1;
-                else if(volt <= LI_CHG_LV2)
+                else if (volt <= LI_CHG_LV2)
                     value = 3;
-                else if(volt <= LI_CHG_LV3)
+                else if (volt <= LI_CHG_LV3)
                     value = (uint8_t)((volt - 4) * 140 / 5 + 0.5) *
                             5; // 4.25Vで35%になるよう5%単位
                 else
@@ -512,21 +513,21 @@ void measure_and_notify(void)
             }
             else
             {
-                if(volt <= LI_LV1)
+                if (volt <= LI_LV1)
                     value = 1;
-                else if(volt <= LI_LV2)
+                else if (volt <= LI_LV2)
                     value = 3;
-                else if(volt <= LI_LV3)
+                else if (volt <= LI_LV3)
                     value =
                         (uint8_t)(((volt - LI_LV2) * 277.78 + 5) / 5 + 0.5) *
                         5; // 3.8Vで55%、3.62Vで5%
-                else if(volt <= LI_LV4)
+                else if (volt <= LI_LV4)
                     value = (uint8_t)(((volt - LI_LV3) * 150 + 55) / 5 + 0.5) *
                             5; // 4.1Vで100%、3.8Vで55%
                 else
                     value = 100;
             }
-            if(lastnotify != value)
+            if (lastnotify != value)
             {
                 lastnotify = value;
                 myBasNotyfy(value);
@@ -550,7 +551,7 @@ void pin_init_and_button_attach(void)
     digitalWrite(LED_RED, HIGH);
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_BLUE, HIGH);
-    for(int i = 0; i < KEYSNUM; i++)
+    for (int i = 0; i < KEYSNUM; i++)
     {
         tactpos[i] = i;
         tactsw[i] = new OneButton(my_pin_map[i], true);
@@ -594,7 +595,7 @@ void usb_massstorage_start(void)
     // wake up nor flash
     flashTransport.runCommand(COMMAND_WAKEUP);
 
-    if(flash.begin() == false)
+    if (flash.begin() == false)
     {
         Serial.println("flash.begin false");
     };
@@ -698,7 +699,7 @@ void add_device_name_file(void)
     memcpy(mydevicename, basedevicename, strlen(basedevicename));
     memcpy(&mydevicename[strlen(basedevicename)], lastletter,
            strlen(lastletter));
-    if(!root.open("/"))
+    if (!root.open("/"))
     {
         Serial.println("open root failed");
         return;
@@ -706,7 +707,7 @@ void add_device_name_file(void)
     else
     {
         // fat format exits
-        if(file.exists(myfilename) == false)
+        if (file.exists(myfilename) == false)
         {
             file.open(myfilename, O_WRONLY | O_CREAT | O_EXCL);
             file.write(mydevicename);
@@ -742,11 +743,11 @@ void loadmapfile(void)
     // int keystrlen;
     char *padpos;
 
-    if(file.open(inifilename, O_RDONLY))
+    if (file.open(inifilename, O_RDONLY))
     {
 
         // open succsess
-        for(int i = 0; i < KEYSNUM; i++)
+        for (int i = 0; i < KEYSNUM; i++)
         {
 
             memclr(iniheader, sizeof(iniheader));
@@ -757,33 +758,33 @@ void loadmapfile(void)
             memcpy(&iniheader[strlen(iniheader)], positionstr,
                    strlen(positionstr));
             readstr = inifileString(file, (char *)iniheader, (char *)modifier);
-            if(readstr != NULL)
+            if (readstr != NULL)
             {
 
                 // loadsettingstr.concat(i);
                 loadsettingstr.concat(" : ");
                 keycombi_report[i].modifier = 0;
-                if(strstr(readstr, modifierstr[myWIN]) != NULL)
+                if (strstr(readstr, modifierstr[myWIN]) != NULL)
                 {
                     keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTGUI;
                     loadsettingstr.concat("GUI ");
                 }
-                if(strstr(readstr, modifierstr[myCMD]) != NULL)
+                if (strstr(readstr, modifierstr[myCMD]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTGUI;
                     loadsettingstr.concat("GUI ");
                 }
-                if(strstr(readstr, modifierstr[myCTRL]) != NULL)
+                if (strstr(readstr, modifierstr[myCTRL]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTCTRL;
                     loadsettingstr.concat("CTRL ");
                 }
-                if(strstr(readstr, modifierstr[myALT]) != NULL)
+                if (strstr(readstr, modifierstr[myALT]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
                     loadsettingstr.concat("ALT ");
                 }
-                if(strstr(readstr, modifierstr[myOPT]) != NULL)
+                if (strstr(readstr, modifierstr[myOPT]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
                     loadsettingstr.concat("ALT ");
@@ -799,17 +800,17 @@ void loadmapfile(void)
             readstr = inifileString(file, (char *)iniheader, (char *)key);
             int keystrlen = strlen(readstr);
             int padstrlen;
-            switch(keystrlen)
+            switch (keystrlen)
             {
             case 0:
                 loadsettingstr.concat("NO_KEY ");
                 break;
             case 1:
-                if(readstr != NULL && readstr[0] < 128)
+                if (readstr != NULL && readstr[0] < 128)
                 {
                     uint8_t tnum = readstr[0];
                     keycombi_report[i].keycode[0] = conv_table[tnum][1];
-                    if(conv_table[tnum][0] == 1)
+                    if (conv_table[tnum][0] == 1)
                     {
                         keycombi_report[i].modifier |=
                             KEYBOARD_MODIFIER_LEFTSHIFT;
@@ -825,9 +826,9 @@ void loadmapfile(void)
             case 3:
                 padpos = strstr(readstr, ar);
                 padstrlen = strlen(padpos);
-                if(padpos != NULL && padstrlen == 3)
+                if (padpos != NULL && padstrlen == 3)
                 {
-                    switch(padpos[2])
+                    switch (padpos[2])
                     {
                     case 'U':
                         keycombi_report[i].keycode[0] = HID_KEY_ARROW_UP;
@@ -855,9 +856,9 @@ void loadmapfile(void)
             case 4:
                 padpos = strstr(readstr, pad);
                 padstrlen = strlen(padpos);
-                if(padpos != NULL && padstrlen == 4)
+                if (padpos != NULL && padstrlen == 4)
                 {
-                    switch(padpos[3])
+                    switch (padpos[3])
                     {
                     case '*':
                         keycombi_report[i].keycode[0] = HID_KEY_KEYPAD_MULTIPLY;
@@ -891,19 +892,19 @@ void loadmapfile(void)
         }
         readstr = inifileString(file, (char *)strbatt, (char *)strtype);
         // keystrlen = strlen(readstr);
-        if(readstr != NULL)
+        if (readstr != NULL)
         {
-            if(strstr(readstr, strdry) != NULL)
+            if (strstr(readstr, strdry) != NULL)
             {
                 currentBtype = eBT_dry;
                 Serial.println("battery type is dry battery");
             }
-            else if(strstr(readstr, strnimh) != NULL)
+            else if (strstr(readstr, strnimh) != NULL)
             {
                 currentBtype = eBT_NiMH;
                 Serial.println("battery type is NiMH battery");
             }
-            else if(strstr(readstr, strliion) != NULL)
+            else if (strstr(readstr, strliion) != NULL)
             {
                 currentBtype = eBT_liIon;
                 Serial.println("battery type is Litium-Ion battery");
@@ -968,7 +969,7 @@ void blestart(void)
 
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(20); // number of seconds in fast mode
+    Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
     Bluefruit.Advertising.start(
         0); // 0 = Don't stop advertising after n seconds
 }
@@ -1095,8 +1096,8 @@ enum CurrentOperation
 BatType currentBtype;
 CurrentOperation currentOperation;
 uint16_t life_end[2] = {900, 1000};
-const int my_pin_map[] = {D10, D9,       D8, D7, D6, D5,
-                          D4,  PIN_NFC2, D3, D2, D1, D0};
+const int my_pin_map[] = {D10, D9, D8, D7, D6, D5,
+                          D4, PIN_NFC2, D3, D2, D1, D0};
 
 enum Mymodifier
 {
@@ -1158,7 +1159,7 @@ void myKeyboardReport(mycombi *combi)
 {
 
     BLEConnection *connection = Bluefruit.Connection(0);
-    if(connection && connection->connected() && connection->secured())
+    if (connection && connection->connected() && connection->secured())
     {
         blehid.keyboardReport(&keycombi_report[*combi]);
     }
@@ -1170,7 +1171,7 @@ void myKeyboardReport(mycombi *combi)
 void myBasNotyfy(uint8_t value)
 {
     BLEConnection *connection = Bluefruit.Connection(0);
-    if(connection && connection->connected() && connection->secured())
+    if (connection && connection->connected() && connection->secured())
     {
         blebas.notify(value);
     }
@@ -1178,7 +1179,7 @@ void myBasNotyfy(uint8_t value)
 
 void tactclick(void *position)
 {
-    if(currentOperation == eUSB)
+    if (currentOperation == eUSB)
     {
         digitalWrite(LED_BLUE, LOW);
     }
@@ -1214,14 +1215,14 @@ void setup()
     pin_init_and_button_attach();
 
     delay(100);
-    if(NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
+    if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
 
         currentOperation = eUSB;
         Serial.begin(115200);
         delay(10);
 #ifdef DEBUG
-        while(!Serial)
+        while (!Serial)
             delay(10); // wait for native usb
 #endif
         // VBUS present
@@ -1238,13 +1239,13 @@ void setup()
         // battery operate
         currentOperation = eBatt;
 #ifdef DEBUG
-        while(!Serial)
+        while (!Serial)
             delay(10); // wait for native usb
 #endif
         Serial.println("VBUS NOT present");
         flashTransport.begin();
         flashTransport.runCommand(COMMAND_WAKEUP);
-        if(flash.begin())
+        if (flash.begin())
         {
             fatfs.begin(&flash);
             loadmapfile();
@@ -1252,7 +1253,7 @@ void setup()
         flashTransport.runCommand(COMMAND_SLLEP); // sleep nor flash
         flashTransport.end();
     }
-    if(currentBtype == eBT_liIon)
+    if (currentBtype == eBT_liIon)
     {
         // High speed charging (100mA)
         pinMode(PIN_HICHG, OUTPUT);
@@ -1260,7 +1261,7 @@ void setup()
         pinMode(PIN_INVCHG, INPUT);
     }
     blestart();
-    if(currentOperation == eUSB)
+    if (currentOperation == eUSB)
     {
         add_device_name_file();
     }
@@ -1272,7 +1273,7 @@ void loop()
     uint32_t ms;
 
     ms = millis();
-    for(int i = 0; i < KEYSNUM; i++)
+    for (int i = 0; i < KEYSNUM; i++)
     {
         tactsw[i]->tick();
     }
@@ -1281,37 +1282,37 @@ void loop()
 
     // Only send KeyRelease if previously pressed to avoid sending
     // multiple keyRelease reports (that consume memory and bandwidth)
-    if(hasKeyPressed)
+    if (hasKeyPressed)
     {
         hasKeyPressed = false;
 
         BLEConnection *connection = Bluefruit.Connection(0);
-        if(connection && connection->connected() && connection->secured())
+        if (connection && connection->connected() && connection->secured())
         {
             blehid.keyRelease();
             // Delay a bit after a report
             delay(5);
         }
 
-        if(currentOperation == eUSB)
+        if (currentOperation == eUSB)
         {
             digitalWrite(LED_BLUE, HIGH);
         }
     }
-    if(ms - lastMeasure > BAT_MEASURE_INTERVAL)
+    if (ms - lastMeasure > BAT_MEASURE_INTERVAL)
     {
         lastMeasure = ms;
         measure_and_notify();
     }
     ms = millis();
-    if(fs_changed && ((ms - lastflashed) > FLASH_MONITOR_INTERVAL))
+    if (fs_changed && ((ms - lastflashed) > FLASH_MONITOR_INTERVAL))
     {
         loadmapfile();
         fs_changed = false;
     }
-    if(NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
+    if (NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)
     {
-        if(currentOperation == eBatt)
+        if (currentOperation == eBatt)
         {
             // reboot
             Bluefruit.disconnect(0);
@@ -1334,7 +1335,7 @@ void measure_and_notify(void)
     double volt;
     Bluefruit.autoConnLed(false);
     digitalWrite(LED_RED, HIGH);
-    switch(currentBtype)
+    switch (currentBtype)
     {
     case eBT_dry:
         /* FALLTHROUGH */
@@ -1352,30 +1353,30 @@ void measure_and_notify(void)
         vindex = (vindex + 1) & BAT_AVERAGE_MASK;
         count = min(count + 1, BAT_AVERAGE_COUNT);
         rawtotal = 0;
-        for(int i = 0; i < count; i++)
+        for (int i = 0; i < count; i++)
         {
             rawtotal += rawvalues[i];
         }
         mV = (float)rawtotal / count * VBAT_MV_PER_LSB;
         volt1000 = (uint16_t)mV;
-        if(volt1000 > BAT_UPPER)
+        if (volt1000 > BAT_UPPER)
         {
             volt1000 = BAT_UPPER;
         }
-        if(volt1000 < life_end[currentBtype])
+        if (volt1000 < life_end[currentBtype])
         {
             volt1000 = life_end[currentBtype];
         }
         value =
             (uint8_t)(map(volt1000, life_end[currentBtype], BAT_UPPER, 1, 100));
-        if(lastnotify != value && currentOperation == eBatt)
+        if (lastnotify != value && currentOperation == eBatt)
         {
             lastnotify = value;
 #if 1
-            if(volt1000 <= life_end[currentBtype])
+            if (volt1000 <= life_end[currentBtype])
             {
                 myBasNotyfy(1);
-                if(currentBtype == eBT_NiMH)
+                if (currentBtype == eBT_NiMH)
                 {
                     // system off
                     sd_power_system_off();
@@ -1390,7 +1391,7 @@ void measure_and_notify(void)
 
         case eBT_liIon:
             isCharging = battery_isCharging();
-            if(lastIsCharging != isCharging)
+            if (lastIsCharging != isCharging)
             { // 充電状態が変わったらリセット
                 vindex = 0;
                 count = 0;
@@ -1406,7 +1407,7 @@ void measure_and_notify(void)
             vindex = (vindex + 1) & BAT_AVERAGE_MASK;
             count = min(count + 1, BAT_AVERAGE_COUNT);
             rawtotal = 0;
-            for(int i = 0; i < count; i++)
+            for (int i = 0; i < count; i++)
             {
                 rawtotal += rawvalues[i];
             }
@@ -1414,13 +1415,13 @@ void measure_and_notify(void)
             volt = (double)rawtotal / count / 1024 * 3.6 / 510 *
                    1510; // 10bit, Vref=3.6V, 分圧比1000:510
             volt1000 = (uint16_t)(volt * 1000);
-            if(isCharging)
+            if (isCharging)
             {
-                if(volt <= LI_CHG_LV1)
+                if (volt <= LI_CHG_LV1)
                     value = 1;
-                else if(volt <= LI_CHG_LV2)
+                else if (volt <= LI_CHG_LV2)
                     value = 3;
-                else if(volt <= LI_CHG_LV3)
+                else if (volt <= LI_CHG_LV3)
                     value = (uint8_t)((volt - 4) * 140 / 5 + 0.5) *
                             5; // 4.25Vで35%になるよう5%単位
                 else
@@ -1429,21 +1430,21 @@ void measure_and_notify(void)
             }
             else
             {
-                if(volt <= LI_LV1)
+                if (volt <= LI_LV1)
                     value = 1;
-                else if(volt <= LI_LV2)
+                else if (volt <= LI_LV2)
                     value = 3;
-                else if(volt <= LI_LV3)
+                else if (volt <= LI_LV3)
                     value =
                         (uint8_t)(((volt - LI_LV2) * 277.78 + 5) / 5 + 0.5) *
                         5; // 3.8Vで55%、3.62Vで5%
-                else if(volt <= LI_LV4)
+                else if (volt <= LI_LV4)
                     value = (uint8_t)(((volt - LI_LV3) * 150 + 55) / 5 + 0.5) *
                             5; // 4.1Vで100%、3.8Vで55%
                 else
                     value = 100;
             }
-            if(lastnotify != value)
+            if (lastnotify != value)
             {
                 lastnotify = value;
                 myBasNotyfy(value);
@@ -1467,7 +1468,7 @@ void pin_init_and_button_attach(void)
     digitalWrite(LED_RED, HIGH);
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_BLUE, HIGH);
-    for(int i = 0; i < KEYSNUM; i++)
+    for (int i = 0; i < KEYSNUM; i++)
     {
         tactpos[i] = i;
         tactsw[i] = new OneButton(my_pin_map[i], true);
@@ -1511,7 +1512,7 @@ void usb_massstorage_start(void)
     // wake up nor flash
     flashTransport.runCommand(COMMAND_WAKEUP);
 
-    if(flash.begin() == false)
+    if (flash.begin() == false)
     {
         Serial.println("flash.begin false");
     };
@@ -1615,7 +1616,7 @@ void add_device_name_file(void)
     memcpy(mydevicename, basedevicename, strlen(basedevicename));
     memcpy(&mydevicename[strlen(basedevicename)], lastletter,
            strlen(lastletter));
-    if(!root.open("/"))
+    if (!root.open("/"))
     {
         Serial.println("open root failed");
         return;
@@ -1623,7 +1624,7 @@ void add_device_name_file(void)
     else
     {
         // fat format exits
-        if(file.exists(myfilename) == false)
+        if (file.exists(myfilename) == false)
         {
             file.open(myfilename, O_WRONLY | O_CREAT | O_EXCL);
             file.write(mydevicename);
@@ -1659,11 +1660,11 @@ void loadmapfile(void)
     // int keystrlen;
     char *padpos;
 
-    if(file.open(inifilename, O_RDONLY))
+    if (file.open(inifilename, O_RDONLY))
     {
 
         // open succsess
-        for(int i = 0; i < KEYSNUM; i++)
+        for (int i = 0; i < KEYSNUM; i++)
         {
 
             memclr(iniheader, sizeof(iniheader));
@@ -1674,33 +1675,33 @@ void loadmapfile(void)
             memcpy(&iniheader[strlen(iniheader)], positionstr,
                    strlen(positionstr));
             readstr = inifileString(file, (char *)iniheader, (char *)modifier);
-            if(readstr != NULL)
+            if (readstr != NULL)
             {
 
                 // loadsettingstr.concat(i);
                 loadsettingstr.concat(" : ");
                 keycombi_report[i].modifier = 0;
-                if(strstr(readstr, modifierstr[myWIN]) != NULL)
+                if (strstr(readstr, modifierstr[myWIN]) != NULL)
                 {
                     keycombi_report[i].modifier = KEYBOARD_MODIFIER_LEFTGUI;
                     loadsettingstr.concat("GUI ");
                 }
-                if(strstr(readstr, modifierstr[myCMD]) != NULL)
+                if (strstr(readstr, modifierstr[myCMD]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTGUI;
                     loadsettingstr.concat("GUI ");
                 }
-                if(strstr(readstr, modifierstr[myCTRL]) != NULL)
+                if (strstr(readstr, modifierstr[myCTRL]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTCTRL;
                     loadsettingstr.concat("CTRL ");
                 }
-                if(strstr(readstr, modifierstr[myALT]) != NULL)
+                if (strstr(readstr, modifierstr[myALT]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
                     loadsettingstr.concat("ALT ");
                 }
-                if(strstr(readstr, modifierstr[myOPT]) != NULL)
+                if (strstr(readstr, modifierstr[myOPT]) != NULL)
                 {
                     keycombi_report[i].modifier |= KEYBOARD_MODIFIER_LEFTALT;
                     loadsettingstr.concat("ALT ");
@@ -1716,17 +1717,17 @@ void loadmapfile(void)
             readstr = inifileString(file, (char *)iniheader, (char *)key);
             int keystrlen = strlen(readstr);
             int padstrlen;
-            switch(keystrlen)
+            switch (keystrlen)
             {
             case 0:
                 loadsettingstr.concat("NO_KEY ");
                 break;
             case 1:
-                if(readstr != NULL && readstr[0] < 128)
+                if (readstr != NULL && readstr[0] < 128)
                 {
                     uint8_t tnum = readstr[0];
                     keycombi_report[i].keycode[0] = conv_table[tnum][1];
-                    if(conv_table[tnum][0] == 1)
+                    if (conv_table[tnum][0] == 1)
                     {
                         keycombi_report[i].modifier |=
                             KEYBOARD_MODIFIER_LEFTSHIFT;
@@ -1742,9 +1743,9 @@ void loadmapfile(void)
             case 3:
                 padpos = strstr(readstr, ar);
                 padstrlen = strlen(padpos);
-                if(padpos != NULL && padstrlen == 3)
+                if (padpos != NULL && padstrlen == 3)
                 {
-                    switch(padpos[2])
+                    switch (padpos[2])
                     {
                     case 'U':
                         keycombi_report[i].keycode[0] = HID_KEY_ARROW_UP;
@@ -1772,9 +1773,9 @@ void loadmapfile(void)
             case 4:
                 padpos = strstr(readstr, pad);
                 padstrlen = strlen(padpos);
-                if(padpos != NULL && padstrlen == 4)
+                if (padpos != NULL && padstrlen == 4)
                 {
-                    switch(padpos[3])
+                    switch (padpos[3])
                     {
                     case '*':
                         keycombi_report[i].keycode[0] = HID_KEY_KEYPAD_MULTIPLY;
@@ -1808,19 +1809,19 @@ void loadmapfile(void)
         }
         readstr = inifileString(file, (char *)strbatt, (char *)strtype);
         // keystrlen = strlen(readstr);
-        if(readstr != NULL)
+        if (readstr != NULL)
         {
-            if(strstr(readstr, strdry) != NULL)
+            if (strstr(readstr, strdry) != NULL)
             {
                 currentBtype = eBT_dry;
                 Serial.println("battery type is dry battery");
             }
-            else if(strstr(readstr, strnimh) != NULL)
+            else if (strstr(readstr, strnimh) != NULL)
             {
                 currentBtype = eBT_NiMH;
                 Serial.println("battery type is NiMH battery");
             }
-            else if(strstr(readstr, strliion) != NULL)
+            else if (strstr(readstr, strliion) != NULL)
             {
                 currentBtype = eBT_liIon;
                 Serial.println("battery type is Litium-Ion battery");
@@ -1885,7 +1886,7 @@ void blestart(void)
 
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(20); // number of seconds in fast mode
+    Bluefruit.Advertising.setFastTimeout(20);   // number of seconds in fast mode
     Bluefruit.Advertising.start(
         0); // 0 = Don't stop advertising after n seconds
 }
