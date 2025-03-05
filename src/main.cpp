@@ -8,7 +8,7 @@
 #include <bluefruit.h>
 
 // #define DEBUG
-const char Ver_str[] = "107";
+const char Ver_str[] = "108";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
