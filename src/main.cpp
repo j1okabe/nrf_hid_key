@@ -8,14 +8,19 @@
 #include <bluefruit.h>
 
 // #define DEBUG
-const char Ver_str[] = "108";
+const char Ver_str[] = "109";
 const char *basedevicename = "BTCUSTKBD_";
 const char *inifilename = "config.ini";
 char mydevicename[14] = {0};
 #define KEYSNUM 10
 #define KEYCLICKTIME (20)
 #define KEYDEBOUNCE (10)
+#define MAX_CONNECTIONS 2 // 最大接続数
 
+uint16_t conn_handles[MAX_CONNECTIONS] = {BLE_CONN_HANDLE_INVALID, BLE_CONN_HANDLE_INVALID};
+uint8_t current_target = 0;     // 現在のターゲットデバイス
+uint8_t connectioncount = 0;    // 接続数
+uint8_t connectionmaxcount = 1; // 最大接続数
 #if defined(CUSTOM_CS) && defined(CUSTOM_SPI)
 Adafruit_FlashTransport_SPI flashTransport(CUSTOM_CS, CUSTOM_SPI);
 
@@ -51,6 +56,9 @@ FatFileSystem fatfs;
 FatFile root;
 FatFile file;
 
+ble_gap_addr_t my_global_addr;
+// ble_gap_addr_t my_random_addr;
+// uint8_t toggleaddr = 0;
 #define R_BUFFERSIZE (4096) // バッファサイズ
 char buffer[R_BUFFERSIZE];
 int bufferIndex = 0;
@@ -59,7 +67,7 @@ FatFile dataFile;
 uint32_t lastRecieve;
 // USB Mass Storage object
 Adafruit_USBD_MSC usb_msc;
-
+uint32_t ledwait = 0;
 // Set to true when PC write to flash
 bool fs_changed = false;
 uint32_t lastflashed;
@@ -139,7 +147,17 @@ OneButton *tactsw[KEYSNUM];
 int tactpos[KEYSNUM];
 // Setup buttons
 OneButton button20(PIN_NFC1, true);
-
+void connect_callback(uint16_t conn_handle);
+void disconnect_callback(uint16_t conn_handle, uint8_t reason);
+int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize);
+int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize);
+void msc_flush_cb(void);
+void blestart(void);
+void usb_massstorage_start(void);
+void pin_init_and_button_attach(void);
+void measure_and_notify(void);
+bool battery_isCharging(void);
+void add_device_name_file(void);
 void loadmapfile(void);
 void handleSerial(void);
 /// @brief init report data
@@ -170,10 +188,10 @@ void MyKeyCombi_init(void)
 void myKeyboardReport(mycombi *combi)
 {
 
-    BLEConnection *connection = Bluefruit.Connection(0);
+    BLEConnection *connection = Bluefruit.Connection(current_target);
     if (connection && connection->connected() && connection->secured())
     {
-        blehid.keyboardReport(&keycombi_report[*combi]);
+        blehid.keyboardReport(connection->handle(), &keycombi_report[*combi]);
     }
     hasKeyPressed = true;
     Serial.print("button");
@@ -182,10 +200,10 @@ void myKeyboardReport(mycombi *combi)
 }
 void myBasNotyfy(uint8_t value)
 {
-    BLEConnection *connection = Bluefruit.Connection(0);
+    BLEConnection *connection = Bluefruit.Connection(current_target);
     if (connection && connection->connected() && connection->secured())
     {
-        blebas.notify(value);
+        blebas.notify(connection->handle(), value);
     }
 }
 
@@ -194,6 +212,7 @@ void tactclick(void *position)
     if (currentOperation == eUSB)
     {
         digitalWrite(LED_BLUE, LOW);
+        ledwait = 20;
     }
     myKeyboardReport((mycombi *)position);
 }
@@ -205,24 +224,44 @@ void longpress20(void)
     delay(5);
     // digitalWrite(LED_RED, HIGH);
 }
+void shortpress20(void)
+{
 
-void connect_callback(uint16_t conn_handle);
-void disconnect_callback(uint16_t conn_handle, uint8_t reason);
-int32_t msc_read_cb(uint32_t lba, void *buffer, uint32_t bufsize);
-int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize);
-void msc_flush_cb(void);
-void blestart(void);
-void usb_massstorage_start(void);
-void pin_init_and_button_attach(void);
-void measure_and_notify(void);
-bool battery_isCharging(void);
-void add_device_name_file(void);
+    // Bluefruit.disconnect(0);
+
+    // delay(200);
+
+    current_target = (current_target + 1) % connectionmaxcount;
+    uint16_t conn_handle = conn_handles[current_target];
+
+    if (conn_handle == BLE_CONN_HANDLE_INVALID)
+    {
+        current_target = (current_target + 1) % connectionmaxcount;
+    }
+
+    if (current_target == 0)
+    {
+        digitalWrite(LED_BLUE, LOW);
+    }
+    else
+    {
+        digitalWrite(LED_GREEN, LOW);
+    }
+    ledwait = 20;
+    // blestart();
+}
 
 /* setup */
 void setup()
 {
     // Enable DC-DC converter
     NRF_POWER->DCDCEN = 1;
+    // Bluefruit.begin();
+    // my_global_addr = Bluefruit.getAddr();
+    // memcpy(my_random_addr.addr, my_global_addr.addr, 6);
+    // my_random_addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
+    // my_random_addr.addr[5] = 0xC0;
+    // my_random_addr.addr[0] = 0xC0;
     MyKeyCombi_init();
     pin_init_and_button_attach();
 
@@ -296,11 +335,12 @@ void loop()
     if (hasKeyPressed)
     {
         hasKeyPressed = false;
+        BLEConnection *connection = Bluefruit.Connection(current_target);
 
-        BLEConnection *connection = Bluefruit.Connection(0);
+        // BLEConnection *connection = Bluefruit.Connection(0);
         if (connection && connection->connected() && connection->secured())
         {
-            blehid.keyRelease();
+            blehid.keyRelease(connection->handle());
             // Delay a bit after a report
             delay(5);
         }
@@ -332,7 +372,15 @@ void loop()
         }
         handleSerial();
     }
-
+    if (ledwait > 0)
+    {
+        ledwait--;
+        if (ledwait == 0)
+        {
+            digitalWrite(LED_BLUE, HIGH);
+            digitalWrite(LED_GREEN, HIGH);
+        }
+    }
     if (receiving)
     {
         delay(1);
@@ -365,6 +413,7 @@ void handleSerial()
                 Serial.write(0x06); // ACK
                 receiving = true;
                 digitalWrite(LED_RED, LOW);
+                ledwait = 20;
             }
             else
             {
@@ -562,9 +611,11 @@ void pin_init_and_button_attach(void)
         tactsw[i]->setIdleMs(100);
     }
     button20.attachLongPressStart(longpress20);
+    button20.attachClick(shortpress20);
 }
 void connect_callback(uint16_t conn_handle)
 {
+    connectioncount++;
     // Get the reference to current connection
     BLEConnection *connection = Bluefruit.Connection(conn_handle);
 
@@ -573,7 +624,23 @@ void connect_callback(uint16_t conn_handle)
 
     Serial.print("Connected to ");
     Serial.println(central_name);
-    // digitalWrite(LED_RED, HIGH);
+    for (int i = 0; i < connectionmaxcount; i++)
+    {
+        if (conn_handles[i] == BLE_CONN_HANDLE_INVALID)
+        {
+            conn_handles[i] = conn_handle;
+            Serial.print("Connected to device ");
+            Serial.println(i);
+            break;
+        }
+    }
+    if (connectioncount < connectionmaxcount)
+    {
+        Bluefruit.Advertising.start(0);
+    }
+    digitalWrite(LED_RED, HIGH);
+    digitalWrite(LED_BLUE, HIGH);
+    digitalWrite(LED_GREEN, HIGH);
 }
 
 /**
@@ -585,10 +652,24 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 {
     (void)conn_handle;
     (void)reason;
-
+    connectioncount--;
     Serial.println();
     Serial.print("Disconnected, reason = 0x");
     Serial.println(reason, HEX);
+    for (int i = 0; i < connectionmaxcount; i++)
+    {
+        if (conn_handles[i] == conn_handle)
+        {
+            conn_handles[i] = BLE_CONN_HANDLE_INVALID;
+            Serial.print("Disconnected from device ");
+            Serial.println(i);
+            break;
+        }
+    }
+    // if (connectioncount < MAX_CONNECTIONS)
+    // {
+    //     Bluefruit.Advertising.start(0);
+    // }
 }
 
 void usb_massstorage_start(void)
@@ -665,6 +746,7 @@ int32_t msc_write_cb(uint32_t lba, uint8_t *buffer, uint32_t bufsize)
     return bufsize;
 #else
     digitalWrite(LED_GREEN, LOW);
+    ledwait = 20;
 
     // Note: SPIFLash Bock API: readBlocks/writeBlocks/syncBlocks
     // already include 4K sector caching internally. We don't need to cache it,
@@ -739,7 +821,8 @@ void loadmapfile(void)
     const char strdry[] = "dry";
     const char strnimh[] = "NiMH";
     const char strliion[] = "LiIon";
-
+    const char strconnect[] = "CONNECT";
+    const char strnum[] = "NUM";
     char *readstr;
     String loadsettingstr;
     // int keystrlen;
@@ -913,7 +996,22 @@ void loadmapfile(void)
             }
             //
         }
+        readstr = inifileString(file, (char *)strconnect, (char *)strnum);
+        if (readstr != NULL)
+        {
+            connectionmaxcount = atoi(readstr);
+            if (connectionmaxcount > MAX_CONNECTIONS)
+            {
+                connectionmaxcount = MAX_CONNECTIONS;
+            }
+            if (connectionmaxcount < 1)
+            {
+                connectionmaxcount = 1;
+            }
 
+            Serial.print("connection max count ");
+            Serial.println(connectionmaxcount);
+        }
         free(readstr);
         file.close();
     }
@@ -922,14 +1020,27 @@ void blestart(void)
 {
     char lastletter[5] = {0};
     Bluefruit.Periph.setConnIntervalMS(30, 120);
-    Bluefruit.begin();
+    // if (toggleaddr)
+    // {
+    //     Bluefruit.setAddr(&my_random_addr);
+    // }
+    // else
+    // {
+    //     Bluefruit.setAddr(&my_global_addr);
+    // }
+    Bluefruit.begin(connectionmaxcount);
     Bluefruit.autoConnLed(0);
     Bluefruit.setTxPower(0); // Check bluefruit.h for supported values
     // Configure and Start Device Information Service
     bledis.setManufacturer("j1okabe");
     bledis.setModel("xiao ble");
-    ble_gap_addr_t myaddres = Bluefruit.getAddr();
-    snprintf(lastletter, 5, "%02x%02x", myaddres.addr[0], myaddres.addr[1]);
+
+    my_global_addr = Bluefruit.getAddr();
+    // memcpy(my_random_addr.addr, my_global_addr.addr, 6);
+    // my_random_addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
+    // my_random_addr.addr[5] = 0xC0;
+    // my_random_addr.addr[0] = 0xC0;
+    snprintf(lastletter, 5, "%02x%02x", my_global_addr.addr[0], my_global_addr.addr[1]);
     memcpy(mydevicename, basedevicename, strlen(basedevicename));
     memcpy(&mydevicename[strlen(basedevicename)], lastletter,
            strlen(lastletter));
@@ -955,6 +1066,8 @@ void blestart(void)
     blehid.begin();
     // Bluefruit.Periph.setConnIntervalMS(30, 120);
     Bluefruit.Periph.setConnInterval(18, 24);
+    Bluefruit.Advertising.clearData();
+
     // Advertising packet
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     // Bluefruit.Advertising.addTxPower();
